@@ -8,8 +8,10 @@ import { User } from '../modules/auth/entities/user.entity';
 import { Wine } from '../modules/catalog/entities/wine.entity';
 import { TastingEvent } from '../modules/events/entities/tasting-event.entity';
 import { TastingRound } from '../modules/events/entities/tasting-round.entity';
+import { Rating } from '../modules/ratings/entities/rating.entity';
 import { InitialCatalogSchema1730000000000 } from './migrations/1730000000000-InitialCatalogSchema';
 import { EventsAuthSchema1792945874561 } from './migrations/1792945874561-EventsAuthSchema';
+import { RatingsSchema1792950279937 } from './migrations/1792950279937-RatingsSchema';
 
 // Support both `api/.env` and the repository-level `.env` when running the
 // TypeORM CLI from the api directory. Existing values are never overwritten.
@@ -44,10 +46,18 @@ const AppDataSource = new DataSource({
   username: requireEnv('POSTGRES_USER'),
   password: requireEnv('POSTGRES_PASSWORD'),
   database: requireEnv('POSTGRES_DB'),
-  entities: [Wine, User, TastingEvent, TastingRound, Participant],
+  entities: [
+    Wine,
+    User,
+    TastingEvent,
+    TastingRound,
+    Participant,
+    Rating,
+  ],
   migrations: [
     InitialCatalogSchema1730000000000,
     EventsAuthSchema1792945874561,
+    RatingsSchema1792950279937,
   ],
   migrationsRun: false,
   synchronize: false,

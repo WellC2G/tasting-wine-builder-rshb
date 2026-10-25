@@ -1,0 +1,8 @@
+export enum ParkerQualityCategory {
+  CLASSIC = 'CLASSIC',
+  OUTSTANDING = 'OUTSTANDING',
+  VERY_GOOD = 'VERY_GOOD',
+  GOOD = 'GOOD',
+  AVERAGE = 'AVERAGE',
+  UNACCEPTABLE = 'UNACCEPTABLE',
+}

@@ -7,6 +7,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { EventsModule } from './modules/events/events.module';
+import { RatingsModule } from './modules/ratings/ratings.module';
 import { TastingSessionModule } from './modules/tasting-session/tasting-session.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { TastingSessionModule } from './modules/tasting-session/tasting-session.
     CatalogModule,
     AuthModule,
     EventsModule,
+    RatingsModule,
     TastingSessionModule,
     HealthModule,
   ],

@@ -15,6 +15,8 @@ import type { Namespace, Socket } from 'socket.io';
 
 import type { JwtPayload } from '../auth/interfaces/authenticated-request.interface';
 import { TastingMode } from '../events/entities/tasting-event.entity';
+import { OutlierFilterService } from '../ratings/services/outlier-filter.service';
+import { TastingSessionPublisherService } from '../realtime/tasting-session-publisher.service';
 import {
   AUTH_ERROR_MESSAGE,
   BOTTLE_REVEALED_MESSAGE,
@@ -61,9 +63,13 @@ export class TastingSessionGateway
     private readonly jwtService: JwtService,
     private readonly tastingSessionService: TastingSessionService,
     private readonly roomStateService: RoomStateService,
+    private readonly outlierFilterService: OutlierFilterService,
+    private readonly publisher: TastingSessionPublisherService,
   ) {}
 
   afterInit(server: Namespace): void {
+    this.publisher.setServer(server);
+
     server.use((socket, next) => {
       const tastingSocket = socket as TastingSocket;
 
@@ -237,9 +243,13 @@ export class TastingSessionGateway
       this.roomStateService.clearRoundTimer(event.id, round.id);
       await socket.join(room);
 
+      const stats =
+        await this.outlierFilterService.filterAndAggregate(round.id);
+
       this.server.to(room).emit('bottle_revealed', {
         roundId: round.id,
         wine: this.toWineDetails(wine),
+        stats,
         message: BOTTLE_REVEALED_MESSAGE,
       });
     });

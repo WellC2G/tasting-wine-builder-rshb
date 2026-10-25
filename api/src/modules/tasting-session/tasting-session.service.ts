@@ -18,6 +18,7 @@ import {
 import { Participant } from '../auth/entities/participant.entity';
 import { WineResponseDto } from '../catalog/dto/wine-response.dto';
 import { Wine } from '../catalog/entities/wine.entity';
+import { ParticipantCounterService } from '../realtime/participant-counter.service';
 import {
   EVENT_NOT_FOUND_MESSAGE,
   ROUND_NOT_FOUND_MESSAGE,
@@ -55,6 +56,7 @@ export class TastingSessionService {
     @InjectRepository(Participant)
     private readonly participantsRepository: Repository<Participant>,
     private readonly roomStateService: RoomStateService,
+    private readonly participantCounterService: ParticipantCounterService,
   ) {}
 
   async findHostEventIds(hostId: string): Promise<string[]> {
@@ -87,16 +89,7 @@ export class TastingSessionService {
   async getParticipantCounter(
     eventId: string,
   ): Promise<ParticipantCounterPayload> {
-    const connectedCount = await this.participantsRepository.countBy({
-      eventId,
-      isOnline: true,
-    });
-
-    return {
-      connectedCount,
-      // Модуль оценок будет добавлен на следующем этапе.
-      votedCount: 0,
-    };
+    return this.participantCounterService.getCounter(eventId);
   }
 
   async startRound(

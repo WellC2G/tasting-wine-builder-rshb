@@ -1,10 +1,12 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { Participant } from '../auth/entities/participant.entity';
 import { AuthModule } from '../auth/auth.module';
+import { Participant } from '../auth/entities/participant.entity';
 import { TastingEvent } from '../events/entities/tasting-event.entity';
 import { TastingRound } from '../events/entities/tasting-round.entity';
+import { RatingsModule } from '../ratings/ratings.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { LiveStateAccessGuard } from './guards/live-state-access.guard';
 import { TastingSessionController } from './tasting-session.controller';
 import { TastingSessionGateway } from './tasting-session.gateway';
@@ -14,6 +16,8 @@ import { RoomStateService } from './room-state.service';
 @Module({
   imports: [
     AuthModule,
+    RealtimeModule,
+    RatingsModule,
     TypeOrmModule.forFeature([
       TastingEvent,
       TastingRound,

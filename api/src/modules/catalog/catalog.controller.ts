@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -15,24 +16,34 @@ import { ListWinesQueryDto } from './dto/list-wines-query.dto';
 import { PaginatedWinesResponseDto } from './dto/paginated-wines-response.dto';
 import { WineResponseDto } from './dto/wine-response.dto';
 
-@ApiTags('Catalog')
+const wineIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () =>
+    new BadRequestException(
+      'Идентификатор вина должен быть корректным UUID',
+    ),
+});
+
+@ApiTags('Каталог вин')
 @Controller('wines')
 export class CatalogController {
   constructor(private readonly catalogService: CatalogService) {}
 
   @Get()
   @ApiOperation({
-    summary: 'List wines',
+    summary: 'Список вин',
     description:
-      'Returns a paginated wine catalog with optional filters by type, ' +
-      'region, vintage and a case-insensitive name or winery search.',
+      'Возвращает постраничный каталог вин с фильтрами по типу, региону, ' +
+      'году урожая и поиском по названию вина или винодельне без учёта регистра.',
   })
   @ApiResponse({
     status: 200,
-    description: 'Paginated wine catalog',
+    description: 'Постраничный каталог вин',
     type: PaginatedWinesResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Invalid query parameters' })
+  @ApiResponse({
+    status: 400,
+    description: 'Ошибка валидации параметров запроса',
+  })
   findAll(
     @Query() query: ListWinesQueryDto,
   ): Promise<PaginatedWinesResponseDto> {
@@ -40,40 +51,43 @@ export class CatalogController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a wine by id' })
+  @ApiOperation({ summary: 'Получить вино по идентификатору' })
   @ApiParam({
     name: 'id',
-    description: 'Wine UUID',
+    description: 'Идентификатор вина',
     format: 'uuid',
   })
   @ApiResponse({
     status: 200,
-    description: 'Wine details',
+    description: 'Данные вина',
     type: WineResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Invalid UUID' })
-  @ApiResponse({ status: 404, description: 'Wine not found' })
+  @ApiResponse({
+    status: 400,
+    description: 'Идентификатор должен быть корректным UUID',
+  })
+  @ApiResponse({ status: 404, description: 'Вино не найдено' })
   findOne(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id', wineIdPipe) id: string,
   ): Promise<WineResponseDto> {
     return this.catalogService.findOne(id);
   }
 
   @Post()
   @ApiOperation({
-    summary: 'Create a wine',
+    summary: 'Добавить вино в каталог',
     description:
-      'Adds a new wine to the catalog. The external catalog id must be unique.',
+      'Создаёт запись каталога. Внешний идентификатор вина должен быть уникальным.',
   })
   @ApiResponse({
     status: 201,
-    description: 'Wine created',
+    description: 'Вино добавлено в каталог',
     type: WineResponseDto,
   })
-  @ApiResponse({ status: 400, description: 'Validation failed' })
+  @ApiResponse({ status: 400, description: 'Ошибка валидации данных' })
   @ApiResponse({
     status: 409,
-    description: 'A wine with the same external catalog id already exists',
+    description: 'Вино с таким внешним идентификатором уже существует',
   })
   create(@Body() dto: CreateWineDto): Promise<WineResponseDto> {
     return this.catalogService.create(dto);

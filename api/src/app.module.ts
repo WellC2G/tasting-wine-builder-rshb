@@ -4,7 +4,9 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { buildTypeOrmOptions } from './database/database.config';
 import { HealthModule } from './health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -17,6 +19,8 @@ import { CatalogModule } from './modules/catalog/catalog.module';
       useFactory: buildTypeOrmOptions,
     }),
     CatalogModule,
+    AuthModule,
+    EventsModule,
     HealthModule,
   ],
 })

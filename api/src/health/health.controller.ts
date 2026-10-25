@@ -6,12 +6,18 @@ import { HealthResponseDto } from './dto/health-response.dto';
 const SERVICE_NAME = 'tasting-constructor-api';
 const SERVICE_VERSION = '0.1.0';
 
-@ApiTags('health')
+@ApiTags('Проверка состояния')
 @Controller('health')
 export class HealthController {
   @Get()
-  @ApiOperation({ summary: 'Liveness probe used by Docker Compose' })
-  @ApiOkResponse({ type: HealthResponseDto, description: 'API is alive' })
+  @ApiOperation({
+    summary: 'Проверка доступности API',
+    description: 'Используется Docker Compose для healthcheck контейнера.',
+  })
+  @ApiOkResponse({
+    type: HealthResponseDto,
+    description: 'API доступен',
+  })
   check(): HealthResponseDto {
     return {
       status: 'ok',

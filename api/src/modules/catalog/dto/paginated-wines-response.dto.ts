@@ -3,16 +3,25 @@ import { ApiProperty } from '@nestjs/swagger';
 import { WineResponseDto } from './wine-response.dto';
 
 export class PaginationMetaDto {
-  @ApiProperty({ example: 1, description: 'Current page (1-based)' })
+  @ApiProperty({
+    example: 1,
+    description: 'Текущая страница, начиная с 1',
+  })
   page!: number;
 
-  @ApiProperty({ example: 20, description: 'Page size' })
+  @ApiProperty({ example: 20, description: 'Количество записей на странице' })
   limit!: number;
 
-  @ApiProperty({ example: 14, description: 'Total matching wines' })
+  @ApiProperty({
+    example: 14,
+    description: 'Общее количество найденных вин',
+  })
   total!: number;
 
-  @ApiProperty({ example: 1, description: 'Total number of pages' })
+  @ApiProperty({
+    example: 1,
+    description: 'Общее количество страниц',
+  })
   totalPages!: number;
 }
 

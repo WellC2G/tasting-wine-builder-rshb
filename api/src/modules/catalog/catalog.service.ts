@@ -5,8 +5,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 
+import { isUniqueViolation } from '../../common/database/is-unique-violation';
 import { CreateWineDto } from './dto/create-wine.dto';
 import { ListWinesQueryDto } from './dto/list-wines-query.dto';
 import { PaginatedWinesResponseDto } from './dto/paginated-wines-response.dto';
@@ -76,7 +77,9 @@ export class CatalogService {
     const wine = await this.winesRepository.findOneBy({ id });
 
     if (!wine) {
-      throw new NotFoundException(`Wine with id "${id}" was not found`);
+      throw new NotFoundException(
+        `Вино с идентификатором "${id}" не найдено`,
+      );
     }
 
     return WineResponseDto.fromEntity(wine);
@@ -103,11 +106,13 @@ export class CatalogService {
       return WineResponseDto.fromEntity(savedWine);
     } catch (error) {
       if (
-        error instanceof QueryFailedError &&
-        (error.driverError as { code?: string }).code === '23505'
+        isUniqueViolation(
+          error,
+          'uq_wines_external_catalog_id',
+        )
       ) {
         throw new ConflictException(
-          `A wine with external catalog id "${dto.externalCatalogId}" already exists`,
+          `Вино с внешним идентификатором "${dto.externalCatalogId}" уже существует`,
         );
       }
 

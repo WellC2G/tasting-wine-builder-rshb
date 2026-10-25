@@ -8,7 +8,7 @@ export class WineResponseDto {
 
   @ApiProperty({
     example: 'ru-wine-krasnostop-zolotovsky-2022',
-    description: 'Stable external catalog identifier',
+    description: 'Стабильный внешний идентификатор вина',
   })
   externalCatalogId!: string;
 
@@ -32,7 +32,7 @@ export class WineResponseDto {
 
   @ApiProperty({
     example: 3490,
-    description: 'Approximate retail price in RUB',
+    description: 'Ориентировочная розничная цена в рублях',
     type: Number,
   })
   retailPrice!: number;
@@ -41,7 +41,7 @@ export class WineResponseDto {
     example: null,
     nullable: true,
     type: String,
-    description: 'Optional label or bottle image URL',
+    description: 'Ссылка на изображение вина',
   })
   imageUrl!: string | null;
 

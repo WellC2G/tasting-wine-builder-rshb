@@ -4,6 +4,8 @@ import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { createRussianValidationException } from './common/validation/russian-validation.exception';
 
 const DEFAULT_PORT = 4000;
 
@@ -24,15 +26,18 @@ async function bootstrap(): Promise<void> {
       transformOptions: {
         enableImplicitConversion: true,
       },
+      exceptionFactory: createRussianValidationException,
     }),
   );
   app.enableShutdownHooks();
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Tasting Constructor API')
+    .setTitle('API «Конструктора дегустаций»')
     .setDescription(
-      'REST and real-time API for running wine tastings with the Robert Parker 100-point scale, ' +
-        "blind-tasting state synchronisation and People's Wine Rating exports.",
+      'REST и real-time API для проведения дегустаций вин по 100-балльной ' +
+        'шкале Роберта Паркера, синхронизации слепой дегустации и выгрузки ' +
+        'оценок в «Народный винный рейтинг».',
     )
     .setVersion('0.1.0')
     .addBearerAuth(
@@ -40,13 +45,14 @@ async function bootstrap(): Promise<void> {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Organiser access token',
+        description: 'JWT организатора дегустации',
       },
       'host-jwt',
     )
     .build();
   const swaggerDocument = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, swaggerDocument, {
+    customSiteTitle: 'Документация API — Конструктор дегустаций',
     swaggerOptions: {
       persistAuthorization: true,
     },

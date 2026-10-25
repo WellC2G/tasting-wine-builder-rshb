@@ -1,8 +1,13 @@
 import type { ConfigService } from '@nestjs/config';
 import type { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
+import { Participant } from '../modules/auth/entities/participant.entity';
+import { User } from '../modules/auth/entities/user.entity';
 import { Wine } from '../modules/catalog/entities/wine.entity';
+import { TastingEvent } from '../modules/events/entities/tasting-event.entity';
+import { TastingRound } from '../modules/events/entities/tasting-round.entity';
 import { InitialCatalogSchema1730000000000 } from './migrations/1730000000000-InitialCatalogSchema';
+import { EventsAuthSchema1792945874561 } from './migrations/1792945874561-EventsAuthSchema';
 
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = 5432;
@@ -30,8 +35,11 @@ export function buildTypeOrmOptions(
     username: configService.getOrThrow<string>('POSTGRES_USER'),
     password: configService.getOrThrow<string>('POSTGRES_PASSWORD'),
     database: configService.getOrThrow<string>('POSTGRES_DB'),
-    entities: [Wine],
-    migrations: [InitialCatalogSchema1730000000000],
+    entities: [Wine, User, TastingEvent, TastingRound, Participant],
+    migrations: [
+      InitialCatalogSchema1730000000000,
+      EventsAuthSchema1792945874561,
+    ],
     migrationsRun: true,
     synchronize: false,
     uuidExtension: 'pgcrypto',

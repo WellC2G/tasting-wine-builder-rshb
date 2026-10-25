@@ -4,13 +4,14 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: 'Tasting Constructor',
-    template: '%s · Tasting Constructor',
+    default: 'Конструктор дегустаций',
+    template: '%s · Конструктор дегустаций',
   },
   description:
-    'Run blind wine tastings with the Robert Parker 100-point scale, real-time ' +
-    'state synchronisation and statistically validated results.',
-  applicationName: 'Tasting Constructor',
+    'Проведение слепых дегустаций вин по 100-балльной шкале Роберта ' +
+    'Паркера с синхронизацией состояния в реальном времени и статистически ' +
+    'выверенными результатами.',
+  applicationName: 'Конструктор дегустаций',
   icons: {
     icon: '/favicon.svg',
   },
@@ -26,7 +27,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="ru">
       <body className="min-h-screen bg-stone-950 text-stone-100 antialiased">
         {children}
       </body>

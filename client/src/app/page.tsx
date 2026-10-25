@@ -3,35 +3,35 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 const features = [
   {
     tag: 'PARKER_100',
-    title: 'The Robert Parker scale',
+    title: 'Шкала Роберта Паркера',
     description:
-      'Fifty base points plus four weighted criteria: appearance, aroma, taste and potential. Total scores map automatically to Parker quality categories.',
+      'Пятьдесят базовых баллов и четыре критерия: внешний вид, аромат, вкус и потенциал. Итоговая оценка автоматически определяет категорию качества.',
   },
   {
     tag: 'BLIND',
-    title: 'Synchronised blind service',
+    title: 'Синхронная слепая подача',
     description:
-      'Socket.io rooms keep every device in step. Wine identity stays on the server until the host reveals the bottle, so the label never influences a score.',
+      'Комнаты Socket.io удерживают все устройства в одном ритме. Название, винодельня и цена скрыты до команды ведущего «Раскрыть образец».',
   },
   {
     tag: '2σ',
-    title: 'Outlier filtering',
+    title: 'Фильтрация выбросов',
     description:
-      'From five ratings upwards, samples outside the two-sigma confidence interval are flagged as outliers and excluded from aggregation and export.',
+      'Начиная с пяти оценок значения за пределами интервала двух сигм помечаются как выбросы и исключаются из итоговых расчётов и выгрузки.',
   },
   {
     tag: 'EXPORT',
-    title: "People's Rating adapter",
+    title: 'Выгрузка в Народный рейтинг',
     description:
-      'A typed export package is posted to the mock rating receiver, acknowledged with a receipt and archived in full inside the export audit log.',
+      'Сформированный пакет оценок отправляется в mock-приёмник, получает квитанцию и сохраняется целиком в журнале экспорта.',
   },
 ];
 
 const sampleBreakdown = [
-  { label: 'Appearance', value: 4, max: 5 },
-  { label: 'Aroma', value: 14, max: 15 },
-  { label: 'Taste & finish', value: 17, max: 20 },
-  { label: 'Potential', value: 7, max: 10 },
+  { label: 'Внешний вид', value: 4, max: 5 },
+  { label: 'Аромат', value: 14, max: 15 },
+  { label: 'Вкус и послевкусие', value: 17, max: 20 },
+  { label: 'Потенциал', value: 7, max: 10 },
 ];
 
 const services = [
@@ -40,21 +40,21 @@ const services = [
     stack: 'Next.js 14 · standalone',
     port: '3000',
     description:
-      'Mobile-first host console, presentation screen and guest tasting forms.',
+      'Мобильный пульт ведущего, презентационный экран и анкета участника.',
   },
   {
     name: 'api',
     stack: 'NestJS 10 · Socket.io',
     port: '4000',
     description:
-      'Versioned REST API, real-time gateway, health probe and OpenAPI documentation.',
+      'REST API с версионированием, real-time шлюз, healthcheck и документация OpenAPI.',
   },
   {
     name: 'postgres',
     stack: 'PostgreSQL 16 Alpine',
     port: '5432',
     description:
-      'Durable relational storage backed by the named Docker volume pgdata.',
+      'Надёжное реляционное хранилище на именованном томе pgdata.',
   },
 ];
 
@@ -82,10 +82,10 @@ export default function HomePage() {
             />
             <div>
               <p className="text-sm font-semibold tracking-tight">
-                Tasting Constructor
+                Конструктор дегустаций
               </p>
               <p className="text-xs text-stone-400">
-                Robert Parker 100 · Blind tasting
+                Шкала Роберта Паркера · слепой режим
               </p>
             </div>
           </div>
@@ -94,25 +94,25 @@ export default function HomePage() {
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full bg-emerald-400"
             />
-            Phase 0 · Infrastructure ready
+            Этап 2 · каталог, события и доступ
           </span>
         </header>
 
         <section className="grid gap-12 pb-16 pt-14 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:pt-24">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-              Tasting operations platform
+              Платформа для проведения дегустаций
             </p>
             <h1 className="mt-5 text-balance text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              Blind tasting,
+              Слепая дегустация,
               <span className="block bg-gradient-to-r from-wine-200 via-wine-300 to-wine-500 bg-clip-text text-transparent">
-                engineered.
+                продуманная до деталей.
               </span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-stone-300 sm:text-lg">
-              Build a tasting programme, run synchronised blind rounds from your
-              phone and publish statistically validated results. One Docker
-              Compose stack for the whole evening.
+              Составьте программу дегустации, проведите синхронные слепые
+              раунды с телефона и опубликуйте статистически выверенные
+              результаты. Всё приложение запускается одной командой.
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -122,7 +122,7 @@ export default function HomePage() {
                 rel="noreferrer"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
-                Swagger API docs
+                Документация API
                 <svg
                   aria-hidden="true"
                   viewBox="0 0 20 20"
@@ -144,16 +144,16 @@ export default function HomePage() {
                 rel="noreferrer"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 text-sm font-semibold text-stone-100 transition hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
-                Check API health
+                Проверить состояние API
               </a>
             </div>
 
             <dl className="mt-10 grid max-w-xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
               {[
-                ['3', 'containers'],
-                ['1', 'command'],
-                ['100', 'point scale'],
-                ['2σ', 'outlier rule'],
+                ['3', 'контейнера'],
+                ['1', 'команда'],
+                ['100', 'баллов'],
+                ['2σ', 'правило выбросов'],
               ].map(([value, label]) => (
                 <div key={label}>
                   <dt className="text-2xl font-semibold tracking-tight text-stone-100">
@@ -171,14 +171,14 @@ export default function HomePage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                  Example score
+                  Пример оценки
                 </p>
                 <p className="mt-1 text-sm text-stone-300">
-                  Sample No. 3 · blind round
+                  Образец №3 · слепой раунд
                 </p>
               </div>
               <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-                OUTSTANDING
+                ВЫДАЮЩЕЕСЯ
               </span>
             </div>
 
@@ -186,10 +186,10 @@ export default function HomePage() {
               <span className="text-7xl font-semibold tracking-tighter text-wine-200">
                 92
               </span>
-              <span className="pb-3 text-sm text-stone-500">/ 100</span>
+              <span className="pb-3 text-sm text-stone-500">из 100</span>
             </div>
             <p className="mt-1 text-sm text-stone-400">
-              Outstanding wine · 90–94 points
+              Выдающееся вино · 90–94 балла
             </p>
 
             <div className="mt-7 space-y-4">
@@ -203,7 +203,7 @@ export default function HomePage() {
                   </div>
                   <div
                     role="progressbar"
-                    aria-label={`${criterion.label} score`}
+                    aria-label={`Оценка: ${criterion.label}`}
                     aria-valuemin={0}
                     aria-valuemax={criterion.max}
                     aria-valuenow={criterion.value}
@@ -222,7 +222,7 @@ export default function HomePage() {
 
             <div className="mt-7 rounded-2xl border border-white/10 bg-stone-950/60 p-4">
               <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
-                Parker formula
+                Формула Паркера
               </p>
               <p className="mt-2 font-mono text-xs leading-6 text-stone-300">
                 50 + 4 + 14 + 17 + 7 = 92
@@ -236,15 +236,16 @@ export default function HomePage() {
           className="border-t border-white/5 py-16 sm:py-20"
         >
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-            Core mechanics
+            Ключевые механики
           </p>
           <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <h2 className="max-w-xl text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              Built around the bottle, not the label.
+              В центре внимания — вино, а не этикетка.
             </h2>
             <p className="max-w-md text-sm leading-6 text-stone-400">
-              Target capabilities defined in the architecture specification.
-              Phase 0 delivers the runtime that these domain modules plug into.
+              Возможности соответствуют архитектурной спецификации. На втором
+              этапе добавлены каталог, авторизация и конструктор мероприятий;
+              остальные модули появятся дальше.
             </p>
           </div>
 
@@ -275,15 +276,16 @@ export default function HomePage() {
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-                Runtime topology
+                Структура приложения
               </p>
               <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-                Three services, one network.
+                Три сервиса, одна сеть.
               </h2>
             </div>
             <p className="max-w-md text-sm leading-6 text-stone-400">
-              PostgreSQL becomes healthy first, then the API starts, then the
-              client. Every service communicates over the bridge network.
+              Сначала становится готовой PostgreSQL, затем запускается API, а
+              после успешной проверки — клиент. Все сервисы общаются внутри
+              bridge-сети.
             </p>
           </div>
 
@@ -316,10 +318,10 @@ export default function HomePage() {
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-wine-500/25 bg-wine-950/20 px-5 py-4">
             <p className="font-mono text-xs text-stone-300">
-              network: tasting_net
+              сеть: tasting_net
             </p>
             <p className="text-xs uppercase tracking-[0.14em] text-stone-500">
-              bridge driver · internal DNS
+              драйвер bridge · внутренний DNS
             </p>
           </div>
         </section>
@@ -327,10 +329,10 @@ export default function HomePage() {
         <section className="pb-16 pt-2 sm:pb-20">
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/60 via-stone-900/70 to-stone-950 p-6 sm:p-10">
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-              Get started
+              Быстрый старт
             </p>
             <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-              One command. Full stack.
+              Одна команда. Всё приложение.
             </h2>
             <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10 bg-stone-950/80 p-4">
               <pre className="font-mono text-xs leading-6 text-stone-300 sm:text-sm">
@@ -347,7 +349,7 @@ export default function HomePage() {
                 rel="noreferrer"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-stone-950 transition hover:bg-stone-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
-                Explore the API
+                Изучить API
               </a>
               <a
                 href={`${apiUrl}/api/v1/health`}
@@ -355,14 +357,14 @@ export default function HomePage() {
                 rel="noreferrer"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/15 px-5 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
-                Verify the stack
+                Проверить стек
               </a>
             </div>
           </div>
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-white/5 py-8 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>Tasting Constructor · Phase 0 scaffolding</p>
+          <p>Конструктор дегустаций · этап 2</p>
           <p className="font-mono">
             Next.js 14 · NestJS 10 · PostgreSQL 16
           </p>

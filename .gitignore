@@ -1,0 +1,59 @@
+# =============================================================================
+# Tasting Constructor — root ignore rules
+# =============================================================================
+
+# Local agent instructions (must never be committed)
+AGENTS.md
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build output
+dist/
+**/dist/
+.next/
+**/.next/
+out/
+**/out/
+build/
+**/build/
+*.tsbuildinfo
+
+# Test and coverage artifacts
+coverage/
+**/coverage/
+.nyc_output/
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS caches
+.DS_Store
+**/.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# IDE / editor caches
+.idea/
+**/.idea/
+.vscode/
+**/.vscode/
+*.swp
+*.swo
+
+# Tool caches
+.cache/
+.turbo/
+.eslintcache

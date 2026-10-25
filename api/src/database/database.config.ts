@@ -3,6 +3,7 @@ import type { TypeOrmModuleOptions } from '@nestjs/typeorm';
 
 import { Participant } from '../modules/auth/entities/participant.entity';
 import { User } from '../modules/auth/entities/user.entity';
+import { ExportLog } from '../modules/export/entities/export-log.entity';
 import { Wine } from '../modules/catalog/entities/wine.entity';
 import { TastingEvent } from '../modules/events/entities/tasting-event.entity';
 import { TastingRound } from '../modules/events/entities/tasting-round.entity';
@@ -10,6 +11,7 @@ import { Rating } from '../modules/ratings/entities/rating.entity';
 import { InitialCatalogSchema1730000000000 } from './migrations/1730000000000-InitialCatalogSchema';
 import { EventsAuthSchema1792945874561 } from './migrations/1792945874561-EventsAuthSchema';
 import { RatingsSchema1792950279937 } from './migrations/1792950279937-RatingsSchema';
+import { ExportLogsSchema1792951008275 } from './migrations/1792951008275-ExportLogsSchema';
 
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = 5432;
@@ -44,11 +46,13 @@ export function buildTypeOrmOptions(
       TastingRound,
       Participant,
       Rating,
+      ExportLog,
     ],
     migrations: [
       InitialCatalogSchema1730000000000,
       EventsAuthSchema1792945874561,
       RatingsSchema1792950279937,
+      ExportLogsSchema1792951008275,
     ],
     migrationsRun: true,
     synchronize: false,

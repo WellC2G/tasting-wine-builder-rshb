@@ -7,6 +7,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { EventsModule } from './modules/events/events.module';
+import { ExportModule } from './modules/export/export.module';
 import { RatingsModule } from './modules/ratings/ratings.module';
 import { TastingSessionModule } from './modules/tasting-session/tasting-session.module';
 
@@ -25,6 +26,7 @@ import { TastingSessionModule } from './modules/tasting-session/tasting-session.
     EventsModule,
     RatingsModule,
     TastingSessionModule,
+    ExportModule,
     HealthModule,
   ],
 })

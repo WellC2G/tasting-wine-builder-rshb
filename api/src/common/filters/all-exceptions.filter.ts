@@ -22,6 +22,7 @@ const STATUS_LABELS: Record<number, string> = {
   [HttpStatus.UNPROCESSABLE_ENTITY]: 'Некорректные данные',
   [423]: 'Действие заблокировано',
   [HttpStatus.INTERNAL_SERVER_ERROR]: 'Ошибка сервера',
+  [HttpStatus.BAD_GATEWAY]: 'Ошибка внешнего сервиса',
   [HttpStatus.SERVICE_UNAVAILABLE]: 'Сервис недоступен',
 };
 

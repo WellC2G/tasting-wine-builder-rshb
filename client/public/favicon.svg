@@ -1,13 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Конструктор дегустаций">
   <defs>
-    <linearGradient id="wine" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fb7185"/>
-      <stop offset="1" stop-color="#881337"/>
+    <linearGradient id="wine-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#fb7185" />
+      <stop offset="100%" stop-color="#881337" />
+    </linearGradient>
+    <linearGradient id="glass-rim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35" />
+      <stop offset="100%" stop-color="#fda4af" stop-opacity="0.1" />
     </linearGradient>
   </defs>
-  <rect width="64" height="64" rx="16" fill="#0c0a09"/>
-  <path d="M22 14h20l-2.5 16.5A8.5 8.5 0 0 1 31 38h-2a8.5 8.5 0 0 1-8.5-7.5L18 14z" fill="url(#wine)"/>
-  <path d="M31 38v10" stroke="#fda4af" stroke-width="3" stroke-linecap="round"/>
-  <path d="M24 50h16" stroke="#fda4af" stroke-width="3" stroke-linecap="round"/>
-  <path d="M22.8 24h18.4" stroke="#0c0a09" stroke-width="2" stroke-linecap="round" opacity=".5"/>
+
+  <rect width="64" height="64" rx="16" fill="#0c0a09" />
+  <path d="M22 15h20c1 6.5 4.5 13.5 1.5 18-2.6 4-7.5 5-11.5 5s-8.9-1-11.5-5c-3-4.5.5-11.5 1.5-18z" fill="url(#wine-grad)" />
+  <path d="M22 15h20c1 6.5 4.5 13.5 1.5 18-2.6 4-7.5 5-11.5 5s-8.9-1-11.5-5c-3-4.5.5-11.5 1.5-18z" fill="none" stroke="url(#glass-rim)" stroke-width="1.5" />
+  <path d="M22 25 Q32 27 42 25" stroke="#4c0519" stroke-width="2" stroke-linecap="round" opacity=".6" />
+  <path d="M32 38v11" stroke="#fda4af" stroke-width="2.75" stroke-linecap="round" />
+  <path d="M23 50h18" stroke="#fda4af" stroke-width="2.75" stroke-linecap="round" />
+  <path d="M23 18c-.5 4-1.2 9 .5 13" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity=".4" />
 </svg>

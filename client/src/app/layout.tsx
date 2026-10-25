@@ -12,8 +12,17 @@ export const metadata: Metadata = {
     'Паркера с синхронизацией состояния в реальном времени и статистически ' +
     'выверенными результатами.',
   applicationName: 'Конструктор дегустаций',
+  manifest: '/manifest.webmanifest',
   icons: {
     icon: '/favicon.svg',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Дегустация',
+  },
+  formatDetection: {
+    telephone: false,
   },
 };
 

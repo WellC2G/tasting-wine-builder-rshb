@@ -23,7 +23,7 @@ const features = [
     tag: 'EXPORT',
     title: 'Выгрузка в Народный рейтинг',
     description:
-      'Сформированный пакет оценок отправляется в mock-приёмник, получает квитанцию и сохраняется целиком в журнале экспорта.',
+      'Сформированный пакет оценок отправляется в имитационный приёмник, получает квитанцию и сохраняется целиком в журнале экспорта.',
   },
 ];
 
@@ -94,7 +94,7 @@ export default function HomePage() {
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full bg-emerald-400"
             />
-            Этап 5 · экспорт и аудит-журнал
+            Этап 6 · веб-интерфейс
           </span>
         </header>
 
@@ -165,6 +165,14 @@ export default function HomePage() {
                 </div>
               ))}
             </dl>
+
+            <a
+              href="/host/login"
+              className="mt-6 inline-flex min-h-12 items-center gap-2 rounded-xl px-1 text-sm font-semibold text-wine-200 transition hover:text-white"
+            >
+              Открыть кабинет организатора
+              <span aria-hidden="true">→</span>
+            </a>
           </div>
 
           <aside className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-glow backdrop-blur sm:p-6">
@@ -243,9 +251,9 @@ export default function HomePage() {
               В центре внимания — вино, а не этикетка.
             </h2>
             <p className="max-w-md text-sm leading-6 text-stone-400">
-              Возможности соответствуют архитектурной спецификации. На пятом
-              этапе добавлены выгрузка в Народный рейтинг и аудит-журнал;
-              клиентские экраны появятся дальше.
+              Возможности соответствуют архитектурной спецификации. На шестом
+              этапе добавлены пульт ведущего, экран проектора и PWA-анкета
+              гостя с живой синхронизацией.
             </p>
           </div>
 
@@ -364,7 +372,7 @@ export default function HomePage() {
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-white/5 py-8 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>Конструктор дегустаций · этап 5</p>
+          <p>Конструктор дегустаций · этап 6</p>
           <p className="font-mono">
             Next.js 14 · NestJS 10 · PostgreSQL 16
           </p>

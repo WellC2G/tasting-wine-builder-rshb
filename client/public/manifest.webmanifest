@@ -1,0 +1,19 @@
+{
+  "name": "Конструктор дегустаций",
+  "short_name": "Дегустация",
+  "description": "Анкета участника и пульт организатора дегустации вин",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0c0a09",
+  "theme_color": "#0c0a09",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -19,3 +19,58 @@
     @apply bg-wine-500/30 text-wine-50;
   }
 }
+
+@layer components {
+  .range-wine {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 48px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .range-wine::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      90deg,
+      rgba(225, 29, 72, 0.7),
+      rgba(253, 164, 175, 0.35)
+    );
+  }
+
+  .range-wine::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 28px;
+    height: 28px;
+    margin-top: -11px;
+    border-radius: 9999px;
+    border: 3px solid #4c0519;
+    background: #fda4af;
+    box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.15);
+  }
+
+  .range-wine::-moz-range-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      90deg,
+      rgba(225, 29, 72, 0.7),
+      rgba(253, 164, 175, 0.35)
+    );
+  }
+
+  .range-wine::-moz-range-thumb {
+    width: 24px;
+    height: 24px;
+    border-radius: 9999px;
+    border: 3px solid #4c0519;
+    background: #fda4af;
+  }
+
+  .range-wine:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+}

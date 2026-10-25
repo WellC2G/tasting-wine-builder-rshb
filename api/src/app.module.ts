@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { buildTypeOrmOptions } from './database/database.config';
 import { HealthModule } from './health/health.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
 
 @Module({
   imports: [
@@ -9,6 +12,11 @@ import { HealthModule } from './health/health.module';
       isGlobal: true,
       envFilePath: ['.env', '../.env'],
     }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: buildTypeOrmOptions,
+    }),
+    CatalogModule,
     HealthModule,
   ],
 })

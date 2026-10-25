@@ -20,6 +20,7 @@ The application ships as a single Docker Compose environment with three containe
 - [Ports and Endpoints](#ports-and-endpoints)
 - [Environment Variables](#environment-variables)
 - [Local Development](#local-development)
+- [Database Migrations and Seeding](#database-migrations-and-seeding)
 - [Available Scripts](#available-scripts)
 - [Project Status](#project-status)
 - [Conventions](#conventions)
@@ -122,7 +123,17 @@ The `ExportModule` demonstrates an external integration with the **Adapter** pat
 - SHA-256 guest fingerprint built from client IP, user agent, screen resolution, event ID and `SERVER_SALT`.
 - `CHECK` constraints enforce Parker sub-score bounds at the database level.
 
-> Features marked in this section describe the target product defined in `architecture.md`. Phase 0 delivers the runnable infrastructure and application shells; domain modules are implemented in subsequent phases. See [Project Status](#project-status).
+### Russian wine catalog
+
+The `CatalogModule` is backed by the `wines` table and ships with a curated starter dataset of 14 prominent Russian wines:
+
+- Regions: Кубань, Долина Дона, Крым and Севастополь.
+- Types: `RED`, `WHITE`, `ROSE`, `SPARKLING` and `FORTIFIED`.
+- Producers include Винодельня Ведерниковъ, Мысхако, Uppa Winery, Семигорье, Имение Сикоры, Фанагория, Alma Valley, Lefkadia, Абрау-Дюрсо and Массандра.
+
+`GET /api/v1/wines` supports pagination (`page`, `limit`) and filters by `wineType`, `region`, `vintage` and a case-insensitive `search` across wine name and winery. The seeder checks `external_catalog_id` before inserting, so restarting the API never duplicates catalog entries.
+
+> Features marked in this section describe the target product defined in `architecture.md`. Phase 0 delivered the runnable infrastructure; Phase 1 adds the TypeORM-backed wine catalog, initial migration and Russian wine seed. Remaining domain modules are implemented in subsequent phases. See [Project Status](#project-status).
 
 ---
 
@@ -144,6 +155,23 @@ The `ExportModule` demonstrates an external integration with the **Adapter** pat
 tasting-wine-builder/
 ├── api/                          # NestJS backend
 │   ├── src/
+│   │   ├── database/
+│   │   │   ├── migrations/
+│   │   │   │   └── 1730000000000-InitialCatalogSchema.ts
+│   │   │   ├── data-source.ts    # TypeORM CLI data source
+│   │   │   └── database.config.ts
+│   │   ├── modules/
+│   │   │   └── catalog/
+│   │   │       ├── data/
+│   │   │       │   └── russian-wines.data.ts
+│   │   │       ├── dto/
+│   │   │       ├── entities/
+│   │   │       │   └── wine.entity.ts
+│   │   │       ├── services/
+│   │   │       │   └── wine-seeder.service.ts
+│   │   │       ├── catalog.controller.ts
+│   │   │       ├── catalog.module.ts
+│   │   │       └── catalog.service.ts
 │   │   ├── health/               # Liveness probe (GET /api/v1/health)
 │   │   │   ├── dto/
 │   │   │   │   └── health-response.dto.ts
@@ -180,7 +208,7 @@ tasting-wine-builder/
 └── README.md
 ```
 
-The API will grow by feature modules (`catalog`, `events`, `auth`, `tasting-session`, `ratings`, `export`) under `api/src/`, and the client by route groups (`host`, `join`, presentation screen) under `client/src/app/`. `AGENTS.md` is intentionally local-only and ignored by Git.
+The API currently exposes the catalog feature module and will grow with `events`, `auth`, `tasting-session`, `ratings` and `export` modules under `api/src/`. The client will grow by route groups (`host`, `join`, presentation screen) under `client/src/app/`. `AGENTS.md` is intentionally local-only and ignored by Git.
 
 ---
 
@@ -232,6 +260,12 @@ A healthy response looks like:
 }
 ```
 
+The database schema is migrated and the wine catalog is seeded automatically during API startup. Verify the catalog:
+
+```bash
+curl -s "http://localhost:4000/api/v1/wines?limit=3" | jq
+```
+
 ---
 
 ## Ports and Endpoints
@@ -246,6 +280,23 @@ A healthy response looks like:
 | PostgreSQL | `localhost:5432` | Database (credentials from `.env`) |
 | WebSocket namespace | `/tasting` | Real-time tasting room (planned) |
 
+### Catalog API
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/wines` | Paginated list; filters: `wineType`, `region`, `vintage`, `search`, `page`, `limit` |
+| `GET` | `/api/v1/wines/:id` | Single wine details by UUID |
+| `POST` | `/api/v1/wines` | Create a wine entry with DTO validation |
+
+Example:
+
+```bash
+curl -s --get "http://localhost:4000/api/v1/wines" \
+  --data-urlencode "wineType=WHITE" \
+  --data-urlencode "region=Кубань" \
+  --data-urlencode "limit=10" | jq
+```
+
 The API binds to `0.0.0.0` inside its container. `NEXT_PUBLIC_API_URL` must therefore be a browser-reachable address such as `http://localhost:4000`.
 
 ---
@@ -259,14 +310,15 @@ Copy `.env.example` to `.env` before starting the stack. Docker Compose reads `.
 | `POSTGRES_USER` | `tasting` | postgres, api | Database user |
 | `POSTGRES_PASSWORD` | `change-me-postgres-password` | postgres, api | Database password |
 | `POSTGRES_DB` | `tasting_constructor` | postgres, api | Database name |
-| `POSTGRES_PORT` | `5432` | postgres | Host port mapped to PostgreSQL |
+| `POSTGRES_HOST` | `localhost` | api | Database host for local API runs; Compose overrides it to `postgres` |
+| `POSTGRES_PORT` | `5432` | postgres, api | Host port mapped to PostgreSQL; the API uses `5432` inside Compose |
 | `API_PORT` | `4000` | api | Host port mapped to the API |
 | `JWT_SECRET` | — | api | Signing key for organiser JWTs |
 | `SERVER_SALT` | — | api | Salt for SHA-256 guest fingerprints |
 | `PEOPLES_RATING_WEBHOOK_URL` | `http://localhost:4000/api/v1/mock/peoples-rating/batch` | api | Export adapter target; defaults to the built-in mock receiver |
 | `NEXT_PUBLIC_API_URL` | `http://localhost:4000` | client | Browser-facing API base URL (inlined at build time) |
 
-Inside the Compose network the API also receives `DB_HOST=postgres`, `DB_PORT=5432`, `DB_USERNAME`, `DB_PASSWORD` and `DB_NAME`. These are derived from the `POSTGRES_*` values, so credentials are defined only once.
+The API reads `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB` directly. Compose connects the API to the `postgres` service on port `5432`, while local API runs default to `localhost:5432`.
 
 > `NEXT_PUBLIC_*` variables are embedded into the client bundle during `docker compose build`. Rebuild the client image after changing `NEXT_PUBLIC_API_URL`.
 
@@ -313,6 +365,30 @@ docker compose up
 
 ---
 
+## Database Migrations and Seeding
+
+The API runs with `synchronize: false`; the schema is owned exclusively by TypeORM migrations. Pending migrations are applied automatically on startup (`migrationsRun: true`) before `WineSeederService` executes.
+
+- **Initial migration:** creates the `wine_type_enum`, the `wines` table, its unique index on `external_catalog_id`, check constraints and lookup indexes.
+- **Seeder:** inserts the curated Russian wine dataset idempotently. Existing `external_catalog_id` values are skipped, and `ON CONFLICT DO NOTHING` protects concurrent startup.
+- **Data source:** `api/src/database/data-source.ts` exposes the same connection to the TypeORM CLI and loads `api/.env` or the repository-level `.env`.
+
+Manual commands (run from `api/`):
+
+```bash
+npm run migration:show      # applied / pending migrations
+npm run migration:run       # apply pending migrations
+npm run migration:revert    # revert the most recent migration
+```
+
+Inspect the live database:
+
+```bash
+docker compose exec postgres psql -U tasting -d tasting_constructor
+```
+
+---
+
 ## Available Scripts
 
 ### API (`api/`)
@@ -320,6 +396,9 @@ docker compose up
 | Script | Description |
 | --- | --- |
 | `npm run build` | Compile NestJS to `dist/` |
+| `npm run migration:run` | Apply pending TypeORM migrations |
+| `npm run migration:revert` | Revert the most recent migration |
+| `npm run migration:show` | Show applied and pending migrations |
 | `npm run start` | Start the API without watch mode |
 | `npm run start:dev` | Start with hot reload |
 | `npm run start:debug` | Start with the Node inspector |
@@ -347,9 +426,17 @@ docker compose up
 - [x] Next.js 14 App Router shell with Tailwind CSS and standalone production image
 - [x] English project documentation
 
+**Phase 1 — complete**
+
+- [x] TypeORM integration driven by `POSTGRES_*` variables, with `synchronize: false`
+- [x] Initial `wines` migration with enum, unique index and check constraints plus lookup indexes
+- [x] `Wine` entity, catalog DTOs, `CatalogService` and `CatalogController`
+- [x] Paginated `GET /api/v1/wines` with type, region, vintage and search filters
+- [x] `GET /api/v1/wines/:id` and validated `POST /api/v1/wines` with Swagger annotations
+- [x] Idempotent `WineSeederService` and a curated dataset of 14 Russian wines
+
 **Upcoming phases**
 
-- [ ] Database schema, TypeORM entities, migrations and wine catalog seed
 - [ ] Organiser auth, guest join flow and fingerprint anti-fraud
 - [ ] Event and round builder with `OPEN` / `BLIND` modes and `PARKER_100` / `STARS_5` scales
 - [ ] Socket.io tasting room, timers, vote locking and synchronous reveal

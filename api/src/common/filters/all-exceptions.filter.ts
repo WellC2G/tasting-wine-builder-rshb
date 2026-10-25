@@ -34,6 +34,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
 
   catch(exception: unknown, host: ArgumentsHost): void {
+    if (host.getType() !== 'http') {
+      this.handleWebSocketException(exception, host);
+      return;
+    }
+
     const context = host.switchToHttp();
     const response = context.getResponse<Response>();
     const request = context.getRequest<Request>();
@@ -59,6 +64,23 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message,
       error: STATUS_LABELS[status] ?? 'Ошибка запроса',
     });
+  }
+
+  private handleWebSocketException(
+    exception: unknown,
+    host: ArgumentsHost,
+  ): void {
+    const client = host
+      .switchToWs()
+      .getClient<{ emit?: (event: string, payload: unknown) => void }>();
+    const message =
+      exception instanceof HttpException
+        ? exception.message
+        : 'Внутренняя ошибка сервера';
+
+    if (client && typeof client.emit === 'function') {
+      client.emit('session_error', { message });
+    }
   }
 
   private extractMessage(

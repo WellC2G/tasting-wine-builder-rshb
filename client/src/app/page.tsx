@@ -94,7 +94,7 @@ export default function HomePage() {
               aria-hidden="true"
               className="h-1.5 w-1.5 rounded-full bg-emerald-400"
             />
-            Этап 2 · каталог, события и доступ
+            Этап 3 · синхронизация в реальном времени
           </span>
         </header>
 
@@ -243,9 +243,9 @@ export default function HomePage() {
               В центре внимания — вино, а не этикетка.
             </h2>
             <p className="max-w-md text-sm leading-6 text-stone-400">
-              Возможности соответствуют архитектурной спецификации. На втором
-              этапе добавлены каталог, авторизация и конструктор мероприятий;
-              остальные модули появятся дальше.
+              Возможности соответствуют архитектурной спецификации. На третьем
+              этапе добавлена синхронизация раундов в реальном времени;
+              оценки, экспорт и клиентские экраны появятся дальше.
             </p>
           </div>
 
@@ -364,7 +364,7 @@ export default function HomePage() {
         </section>
 
         <footer className="flex flex-col gap-3 border-t border-white/5 py-8 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>Конструктор дегустаций · этап 2</p>
+          <p>Конструктор дегустаций · этап 3</p>
           <p className="font-mono">
             Next.js 14 · NestJS 10 · PostgreSQL 16
           </p>

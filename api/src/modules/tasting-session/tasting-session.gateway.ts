@@ -1,0 +1,456 @@
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from '@nestjs/websockets';
+import { HttpException, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { isUUID } from 'class-validator';
+import type { Namespace, Socket } from 'socket.io';
+
+import type { JwtPayload } from '../auth/interfaces/authenticated-request.interface';
+import { TastingMode } from '../events/entities/tasting-event.entity';
+import {
+  AUTH_ERROR_MESSAGE,
+  BOTTLE_REVEALED_MESSAGE,
+  INVALID_ACTION_PAYLOAD_MESSAGE,
+  SESSION_ACCESS_DENIED_MESSAGE,
+  SESSION_ACTION_ERROR_MESSAGE,
+  SESSION_CONNECTION_ERROR_MESSAGE,
+  TASTING_NAMESPACE,
+  TIMER_EXPIRED_MESSAGE,
+  VOTING_CLOSED_BY_HOST_MESSAGE,
+  tastingRoom,
+} from './tasting-session.constants';
+import { TastingSessionService } from './tasting-session.service';
+import { RoomStateService } from './room-state.service';
+import type {
+  ParticipantCounterPayload,
+  RoundActionPayload,
+  SocketAuthContext,
+  StartRoundPayload,
+  TastingSocketData,
+  WineDetails,
+} from './interfaces/tasting-session.interfaces';
+import type { Wine } from '../catalog/entities/wine.entity';
+
+type TastingSocket = Socket & { data: TastingSocketData };
+
+@WebSocketGateway({
+  namespace: TASTING_NAMESPACE,
+  cors: {
+    origin: true,
+    credentials: true,
+  },
+})
+export class TastingSessionGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  private readonly logger = new Logger(TastingSessionGateway.name);
+  private readonly participantSockets = new Map<string, Set<string>>();
+
+  @WebSocketServer()
+  private server!: Namespace;
+
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly tastingSessionService: TastingSessionService,
+    private readonly roomStateService: RoomStateService,
+  ) {}
+
+  afterInit(server: Namespace): void {
+    server.use((socket, next) => {
+      const tastingSocket = socket as TastingSocket;
+
+      this.authenticateSocket(tastingSocket)
+        .then((auth) => {
+          tastingSocket.data.auth = auth;
+          next();
+        })
+        .catch(() => {
+          next(new Error(AUTH_ERROR_MESSAGE));
+        });
+    });
+  }
+
+  async handleConnection(socket: TastingSocket): Promise<void> {
+    const auth = socket.data.auth;
+
+    if (!auth) {
+      this.rejectSocket(socket, AUTH_ERROR_MESSAGE);
+      return;
+    }
+
+    try {
+      if (auth.role === 'HOST') {
+        await this.attachHost(socket, auth);
+      } else {
+        await this.attachGuest(socket, auth);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to initialize socket ${socket.id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      this.rejectSocket(socket, SESSION_CONNECTION_ERROR_MESSAGE);
+    }
+  }
+
+  async handleDisconnect(socket: TastingSocket): Promise<void> {
+    const auth = socket.data.auth;
+
+    if (!auth || auth.role !== 'GUEST') {
+      return;
+    }
+
+    const hasOtherSockets = this.unregisterParticipantSocket(
+      auth.participantId,
+      socket.id,
+    );
+
+    if (hasOtherSockets) {
+      return;
+    }
+
+    try {
+      await this.tastingSessionService.setParticipantOnline(
+        auth.participantId,
+        false,
+      );
+      await this.broadcastParticipantCounter(auth.eventId);
+    } catch (error) {
+      this.logger.error(
+        `Failed to update participant ${auth.participantId} on disconnect`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+  }
+
+  @SubscribeMessage('host:start_round')
+  async handleStartRound(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isStartRoundPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round, endsAt } =
+        await this.tastingSessionService.startRound(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+          payload.durationSeconds,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+
+      this.roomStateService.startRoundTimer({
+        eventId: event.id,
+        roundId: round.id,
+        durationSeconds: round.durationSeconds,
+        endsAt,
+        onExpire: () => {
+          this.server.to(room).emit('voting_closed', {
+            roundId: round.id,
+            message: TIMER_EXPIRED_MESSAGE,
+          });
+        },
+      });
+
+      const basePayload = {
+        roundId: round.id,
+        orderNumber: round.orderNumber,
+        blindLabel: round.blindLabel,
+        scaleType: event.scaleType,
+        durationSeconds: round.durationSeconds,
+        endsAt: endsAt.toISOString(),
+      };
+
+      if (event.mode === TastingMode.OPEN) {
+        this.server.to(room).emit('round_started', {
+          ...basePayload,
+          wine: this.toWineDetails(round.wine),
+        });
+      } else {
+        this.server.to(room).emit('round_started', basePayload);
+      }
+    });
+  }
+
+  @SubscribeMessage('host:lock_voting')
+  async handleLockVoting(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRoundActionPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round } =
+        await this.tastingSessionService.lockVoting(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+        );
+
+      const room = tastingRoom(event.id);
+      this.roomStateService.clearRoundTimer(event.id, round.id);
+      await socket.join(room);
+
+      this.server.to(room).emit('voting_closed', {
+        roundId: round.id,
+        message: VOTING_CLOSED_BY_HOST_MESSAGE,
+      });
+    });
+  }
+
+  @SubscribeMessage('host:reveal_bottle')
+  async handleRevealBottle(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRoundActionPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round, wine } =
+        await this.tastingSessionService.revealBottle(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+        );
+
+      const room = tastingRoom(event.id);
+      this.roomStateService.clearRoundTimer(event.id, round.id);
+      await socket.join(room);
+
+      this.server.to(room).emit('bottle_revealed', {
+        roundId: round.id,
+        wine: this.toWineDetails(wine),
+        message: BOTTLE_REVEALED_MESSAGE,
+      });
+    });
+  }
+
+  private async authenticateSocket(
+    socket: TastingSocket,
+  ): Promise<SocketAuthContext> {
+    const rawToken = socket.handshake.auth?.token;
+
+    if (typeof rawToken !== 'string' || rawToken.trim().length === 0) {
+      throw new Error(AUTH_ERROR_MESSAGE);
+    }
+
+    const token = rawToken.trim();
+
+    try {
+      const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
+
+      if (
+        payload.sub &&
+        payload.email &&
+        (payload.role === 'HOST' || payload.role === 'ADMIN')
+      ) {
+        return {
+          role: 'HOST',
+          hostId: payload.sub,
+          email: payload.email,
+        };
+      }
+    } catch {
+      // A guest token is not a JWT; fall through to the participant lookup.
+    }
+
+    const participant =
+      await this.tastingSessionService.findParticipantByToken(token);
+
+    if (!participant) {
+      throw new Error(AUTH_ERROR_MESSAGE);
+    }
+
+    return {
+      role: 'GUEST',
+      participantId: participant.id,
+      eventId: participant.eventId,
+    };
+  }
+
+  private async attachHost(
+    socket: TastingSocket,
+    auth: Extract<SocketAuthContext, { role: 'HOST' }>,
+  ): Promise<void> {
+    const eventIds = await this.tastingSessionService.findHostEventIds(
+      auth.hostId,
+    );
+
+    for (const eventId of eventIds) {
+      await socket.join(tastingRoom(eventId));
+      const counter = await this.tastingSessionService.getParticipantCounter(
+        eventId,
+      );
+      socket.emit('participant_counter_updated', counter);
+    }
+  }
+
+  private async attachGuest(
+    socket: TastingSocket,
+    auth: Extract<SocketAuthContext, { role: 'GUEST' }>,
+  ): Promise<void> {
+    this.registerParticipantSocket(auth.participantId, socket.id);
+    await this.tastingSessionService.setParticipantOnline(
+      auth.participantId,
+      true,
+    );
+    await socket.join(tastingRoom(auth.eventId));
+    await this.broadcastParticipantCounter(auth.eventId);
+  }
+
+  private async runHostAction(
+    socket: TastingSocket,
+    action: (hostId: string) => Promise<void>,
+  ): Promise<void> {
+    const auth = socket.data.auth;
+
+    if (!auth || auth.role !== 'HOST') {
+      this.emitSessionError(socket, SESSION_ACCESS_DENIED_MESSAGE);
+      return;
+    }
+
+    try {
+      await action(auth.hostId);
+    } catch (error) {
+      if (error instanceof HttpException) {
+        this.emitSessionError(socket, error.message);
+        return;
+      }
+
+      this.logger.error(
+        'Host WebSocket action failed',
+        error instanceof Error ? error.stack : String(error),
+      );
+      this.emitSessionError(socket, SESSION_ACTION_ERROR_MESSAGE);
+    }
+  }
+
+  private async broadcastParticipantCounter(
+    eventId: string,
+  ): Promise<void> {
+    const counter: ParticipantCounterPayload =
+      await this.tastingSessionService.getParticipantCounter(eventId);
+
+    this.server
+      .to(tastingRoom(eventId))
+      .emit('participant_counter_updated', counter);
+  }
+
+  private registerParticipantSocket(
+    participantId: string,
+    socketId: string,
+  ): void {
+    const sockets = this.participantSockets.get(participantId) ?? new Set();
+
+    sockets.add(socketId);
+    this.participantSockets.set(participantId, sockets);
+  }
+
+  private unregisterParticipantSocket(
+    participantId: string,
+    socketId: string,
+  ): boolean {
+    const sockets = this.participantSockets.get(participantId);
+
+    if (!sockets) {
+      return false;
+    }
+
+    sockets.delete(socketId);
+
+    if (sockets.size === 0) {
+      this.participantSockets.delete(participantId);
+      return false;
+    }
+
+    return true;
+  }
+
+  private rejectSocket(socket: TastingSocket, message: string): void {
+    socket.emit('auth_error', { message });
+    const timeout = setTimeout(() => socket.disconnect(true), 50);
+
+    if (typeof timeout.unref === 'function') {
+      timeout.unref();
+    }
+  }
+
+  private emitSessionError(
+    socket: TastingSocket,
+    message: string,
+  ): void {
+    socket.emit('session_error', { message });
+  }
+
+  private isStartRoundPayload(
+    payload: unknown,
+  ): payload is StartRoundPayload {
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+
+    const candidate = payload as Partial<StartRoundPayload>;
+
+    return (
+      typeof candidate.eventId === 'string' &&
+      isUUID(candidate.eventId) &&
+      typeof candidate.roundId === 'string' &&
+      isUUID(candidate.roundId) &&
+      (candidate.durationSeconds === undefined ||
+        (Number.isInteger(candidate.durationSeconds) &&
+          candidate.durationSeconds >= 1 &&
+          candidate.durationSeconds <= 3600))
+    );
+  }
+
+  private isRoundActionPayload(
+    payload: unknown,
+  ): payload is RoundActionPayload {
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+
+    const candidate = payload as Partial<RoundActionPayload>;
+
+    return (
+      typeof candidate.eventId === 'string' &&
+      isUUID(candidate.eventId) &&
+      typeof candidate.roundId === 'string' &&
+      isUUID(candidate.roundId)
+    );
+  }
+
+  private toWineDetails(wine: Wine): WineDetails {
+    return {
+      id: wine.id,
+      name: wine.name,
+      winery: wine.winery,
+      region: wine.region,
+      grapeVarieties: wine.grapeVarieties,
+      vintage: wine.vintage,
+      wineType: wine.wineType,
+      retailPrice: wine.retailPrice,
+      imageUrl: wine.imageUrl,
+    };
+  }
+}

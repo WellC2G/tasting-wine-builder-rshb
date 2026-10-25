@@ -90,7 +90,7 @@ x = 50 + 12,5 × (s − 1), где s ∈ [1, 5]
 
 ### Слепая дегустация и синхронизация в реальном времени
 
-В режиме `BLIND` сервер не передаёт гостям `wineId`, название вина, винодельню, сорт, винтаж или розничную цену до события `bottle_revealed`. Фильтрация выполняется на уровне DTO до отправки ответа, поэтому метаданные физически не попадают в гостевой JSON.
+В режиме `BLIND` сервер не передаёт гостям `wineId`, название вина, винодельню, сорт, винтаж или розничную цену до события `bottle_revealed`. Фильтрация выполняется на уровне DTO до отправки ответа и в WebSocket-событиях, поэтому метаданные не попадают в гостевой JSON.
 
 Комнаты Socket.io (`tasting_{eventId}`) синхронизируют все устройства:
 
@@ -98,9 +98,9 @@ x = 50 + 12,5 × (s − 1), где s ∈ [1, 5]
 - `participant_counter_updated` — счётчики подключённых и проголосовавших;
 - `host:lock_voting` → `voting_closed`;
 - `host:reveal_bottle` → `bottle_revealed`;
-- `leaderboard_updated`.
+- `leaderboard_updated` — зарезервировано для следующего этапа.
 
-Пульт организатора, презентационный экран и анкеты гостей реагируют на одни и те же события, поэтому таймеры, блокировки и раскрытие образцов происходят одновременно.
+Пульт организатора, презентационный экран и анкеты гостей реагируют на одни и те же события, поэтому таймеры, блокировки и раскрытие образцов происходят одновременно. Серверный таймер автоматически переводит раунд в статус `VOTING_CLOSED` и рассылает `voting_closed` с сообщением «Время раунда истекло, голосование закрыто».
 
 ### Фильтрация выбросов по правилу 2 сигм
 
@@ -140,7 +140,7 @@ x = 50 + 12,5 × (s − 1), где s ∈ [1, 5]
 - Создание дегустации с вложенными раундами и автоматическим PIN-кодом.
 - Список, детали, статусы и раунды мероприятия с полными данными вин только для организатора.
 
-> Механики оценки, WebSocket-синхронизация, фильтрация 2 сигм и экспорт описаны в соответствии с архитектурной спецификацией. На текущем этапе реализованы каталог, авторизация, мероприятия и гостевые сессии; остальные доменные модули появятся на следующих этапах. См. раздел [Статус проекта](#статус-проекта).
+> Механики оценки, фильтрация 2 сигм и экспорт описаны в соответствии с архитектурной спецификацией. На текущем этапе реализованы каталог, авторизация, мероприятия, гостевые сессии и WebSocket-синхронизация; оценки, экспорт и клиентские экраны появятся на следующих этапах. См. раздел [Статус проекта](#статус-проекта).
 
 ---
 
@@ -190,12 +190,21 @@ tasting-wine-builder/
 │   │   │   │   ├── catalog.controller.ts
 │   │   │   │   ├── catalog.module.ts
 │   │   │   │   └── catalog.service.ts
-│   │   │   └── events/
-│   │   │       ├── dto/
-│   │   │       ├── entities/         # TastingEvent, TastingRound
-│   │   │       ├── events.controller.ts
-│   │   │       ├── events.module.ts
-│   │   │       └── events.service.ts
+│   │   │   ├── events/
+│   │   │   │   ├── dto/
+│   │   │   │   ├── entities/         # TastingEvent, TastingRound
+│   │   │   │   ├── events.controller.ts
+│   │   │   │   ├── events.module.ts
+│   │   │   │   └── events.service.ts
+│   │   │   └── tasting-session/
+│   │   │       ├── dto/              # Live-state DTO
+│   │   │       ├── guards/           # Доступ к live-state
+│   │   │       ├── interfaces/       # Payload и контекст сокета
+│   │   │       ├── room-state.service.ts
+│   │   │       ├── tasting-session.controller.ts
+│   │   │       ├── tasting-session.gateway.ts
+│   │   │       ├── tasting-session.module.ts
+│   │   │       └── tasting-session.service.ts
 │   │   ├── health/
 │   │   ├── app.module.ts
 │   │   └── main.ts
@@ -296,7 +305,7 @@ curl -s "http://localhost:4000/api/v1/wines?limit=3" | jq
 | Swagger UI | <http://localhost:4000/api/docs> | Интерактивная документация OpenAPI 3 |
 | Healthcheck | <http://localhost:4000/api/v1/health> | Проверка доступности API |
 | PostgreSQL | `localhost:5432` | База данных (учётные данные из `.env`) |
-| WebSocket | `/tasting` | Комнаты дегустации (следующий этап) |
+| WebSocket | `http://localhost:4000/tasting` | Namespace Socket.io для сессий дегустации |
 
 API слушает `0.0.0.0` внутри контейнера, поэтому `NEXT_PUBLIC_API_URL` должен быть адресом, доступным из браузера, например `http://localhost:4000`.
 
@@ -319,6 +328,9 @@ API слушает `0.0.0.0` внутри контейнера, поэтому `
 | `GET` | `/api/v1/events/:id` | Детали мероприятия, раунды и количество участников |
 | `PATCH` | `/api/v1/events/:id/status` | Изменить статус (`DRAFT`, `ACTIVE`, `FINISHED`) |
 | `GET` | `/api/v1/events/:id/rounds` | Раунды с полными данными вин |
+| `GET` | `/api/v1/events/:id/live-state` | Состояние сессии для переподключения |
+
+Эндпоинт `live-state` принимает либо `Authorization: Bearer <JWT>` организатора, либо `X-Guest-Token: <guestSessionToken>` гостя. Организатор получает полные данные вина; гость в режиме `BLIND` не получает метаданные вина до раскрытия образца.
 
 ### Каталог вин
 
@@ -376,6 +388,55 @@ curl -s -X POST http://localhost:4000/api/v1/auth/guest-join \
 ```
 
 В режиме `BLIND` в `event.currentRound` передаются только `roundId`, `orderNumber`, `blindLabel`, `status`, `durationSeconds` и `remainingSeconds`. Поля `wineId`, название, винодельня, винтаж и цена отсутствуют. В режиме `OPEN` дополнительно возвращается объект `wine` с полными данными.
+
+### WebSocket-синхронизация
+
+Подключение выполняется к namespace `/tasting`:
+
+```js
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:4000/tasting', {
+  auth: {
+    token: '<JWT организатора или guestSessionToken>',
+  },
+});
+```
+
+- Организатор подключается с Bearer JWT и автоматически входит в комнаты всех своих мероприятий.
+- Гость подключается с `guestSessionToken` и входит только в комнату своего мероприятия.
+- При отсутствии или недействительности токена соединение отклоняется с сообщением «Ошибка авторизации: недействительный токен».
+- Счётчик участников приходит в событии `participant_counter_updated` с полями `connectedCount` и `votedCount`.
+
+| Событие клиента | Направление | Действие |
+| --- | --- | --- |
+| `host:start_round` | организатор → сервер | Запускает раунд и таймер |
+| `host:lock_voting` | организатор → сервер | Закрывает голосование ведущим |
+| `host:reveal_bottle` | организатор → сервер | Раскрывает карточку образца |
+
+| Событие сервера | Получатели | Полезная нагрузка |
+| --- | --- | --- |
+| `round_started` | вся комната | Раунд, таймер, `endsAt`; в `BLIND` без метаданных вина |
+| `voting_closed` | вся комната | `{ roundId, message }` |
+| `bottle_revealed` | вся комната | `{ roundId, wine, message }` с полными данными вина |
+| `participant_counter_updated` | комната | `{ connectedCount, votedCount }` |
+| `auth_error` / `session_error` | отправитель | Локализованное сообщение об ошибке |
+
+Пример управления раундом:
+
+```js
+socket.on('round_started', (payload) => {
+  console.log(payload);
+});
+
+socket.emit('host:start_round', {
+  eventId: '<UUID мероприятия>',
+  roundId: '<UUID раунда>',
+  durationSeconds: 180,
+});
+```
+
+В режиме `BLIND` событие `round_started` содержит строго `roundId`, `orderNumber`, `blindLabel`, `scaleType`, `durationSeconds` и `endsAt`. В режиме `OPEN` дополнительно передаётся объект `wine`. При истечении таймера сервер сам закрывает голосование и рассылает `voting_closed`; при действии ведущего сообщение — «Голосование закрыто ведущим».
 
 ---
 
@@ -560,7 +621,15 @@ curl -s "http://localhost:4000/api/v1/wines?limit=3" | jq
 curl -s -X POST http://localhost:4000/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"sommelier@tasting.ru","password":"Sommelier2026!"}' | jq
+
+# Состояние сессии для организатора и гостя
+curl -s "http://localhost:4000/api/v1/events/<UUID>/live-state" \
+  -H "Authorization: Bearer <JWT>" | jq
+curl -s "http://localhost:4000/api/v1/events/<UUID>/live-state" \
+  -H "X-Guest-Token: <guestSessionToken>" | jq
 ```
+
+WebSocket-сценарий проверяется клиентом Socket.io: подключение к `http://localhost:4000/tasting` с `auth.token`, затем последовательность `host:start_round` → `round_started`, `host:lock_voting` → `voting_closed`, `host:reveal_bottle` → `bottle_revealed`.
 
 ---
 
@@ -591,9 +660,19 @@ curl -s -X POST http://localhost:4000/api/v1/auth/login \
 - [x] Создание, список, детали, статусы и раунды мероприятий
 - [x] Русскоязычные сообщения API, интерфейс клиента и README
 
+**Этап 3 — завершён**
+
+- [x] Socket.io namespace `/tasting` с CORS и авторизацией рукопожатия
+- [x] Комнаты `tasting_{eventId}` и изоляция мероприятий
+- [x] Обновление `is_online` при подключении и отключении гостя
+- [x] Счётчик участников `participant_counter_updated`
+- [x] Серверные таймеры и автоматическое закрытие голосования
+- [x] Действия организатора: старт раунда, блокировка и раскрытие образца
+- [x] Приватность `BLIND` в событии `round_started` и полные данные в `OPEN`
+- [x] REST-эндпоинт `GET /api/v1/events/:id/live-state` для переподключения
+
 **Следующие этапы**
 
-- [ ] WebSocket-комнаты, таймеры, блокировка голосования и синхронное раскрытие
 - [ ] Оценки по Паркеру, расчёт категорий и фильтрация выбросов 2 сигм
 - [ ] Экспорт в «Народный винный рейтинг», журнал `export_logs` и просмотр JSON
 - [ ] Мобильный пульт организатора, презентационный экран и PWA гостя

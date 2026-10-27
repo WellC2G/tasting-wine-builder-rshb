@@ -5,7 +5,7 @@ import { ExportPayloadDto } from '../dto/export-payload.dto';
 import { ExportExternalStatus } from '../enums/export-external-status.enum';
 
 export const DEFAULT_PEOPLES_RATING_WEBHOOK_URL =
-  'http://localhost:4000/api/v1/mock/peoples-rating/batch';
+  'http://127.0.0.1:4000/api/v1/mock/peoples-rating/batch';
 
 export interface PeoplesRatingDispatchResult {
   success: boolean;

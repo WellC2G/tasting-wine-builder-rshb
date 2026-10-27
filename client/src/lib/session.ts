@@ -7,6 +7,11 @@ const HOST_TOKEN_KEY = 'tasting.host.token';
 const HOST_USER_KEY = 'tasting.host.user';
 const GUEST_SESSION_PREFIX = 'tasting.guest.';
 const RATING_PREFIX = 'tasting.rating.';
+const DEVICE_ID_STORAGE_KEY = 'tasting.device.id';
+const DEVICE_ID_COOKIE_NAME = 'tasting_device_id';
+const DEVICE_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
+const DEVICE_ID_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+const FALLBACK_SCREEN_RESOLUTION = '390x844';
 
 export interface GuestSession {
   token: string;
@@ -16,6 +21,144 @@ export interface GuestSession {
 
 function canUseStorage(): boolean {
   return typeof window !== 'undefined';
+}
+
+function isBrowser(): boolean {
+  return (
+    typeof window !== 'undefined' && typeof document !== 'undefined'
+  );
+}
+
+function generateDeviceId(): string {
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
+  ) {
+    return crypto.randomUUID();
+  }
+
+  const bytes = new Uint8Array(16);
+
+  if (
+    typeof crypto !== 'undefined' &&
+    typeof crypto.getRandomValues === 'function'
+  ) {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+
+  const hex = Array.from(bytes, (value) =>
+    value.toString(16).padStart(2, '0'),
+  ).join('');
+
+  return `dev-${hex}`;
+}
+
+function readStoredDeviceId(): string | null {
+  if (!canUseStorage()) {
+    return null;
+  }
+
+  try {
+    const value = window.localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+
+    return value && DEVICE_ID_PATTERN.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function readDeviceIdCookie(): string | null {
+  if (!isBrowser()) {
+    return null;
+  }
+
+  const prefix = `${DEVICE_ID_COOKIE_NAME}=`;
+  const cookie = document.cookie
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(prefix));
+
+  if (!cookie) {
+    return null;
+  }
+
+  try {
+    const value = decodeURIComponent(cookie.slice(prefix.length));
+
+    return DEVICE_ID_PATTERN.test(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistDeviceId(deviceId: string): void {
+  if (!isBrowser()) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, deviceId);
+  } catch {
+    // Cookies remain available when localStorage is blocked.
+  }
+
+  const secure =
+    window.location.protocol === 'https:' ? '; Secure' : '';
+
+  document.cookie =
+    `${DEVICE_ID_COOKIE_NAME}=${encodeURIComponent(deviceId)}` +
+    `; Path=/; Max-Age=${DEVICE_ID_COOKIE_MAX_AGE_SECONDS}` +
+    `; SameSite=Lax${secure}`;
+}
+
+/**
+ * Returns a persistent identifier shared by the browser's tabs and windows.
+ * The cookie keeps the identity even if localStorage is cleared or blocked.
+ */
+export function getOrCreateDeviceId(): string {
+  if (!isBrowser()) {
+    return generateDeviceId();
+  }
+
+  const existing = readStoredDeviceId() ?? readDeviceIdCookie();
+
+  if (existing) {
+    persistDeviceId(existing);
+    return existing;
+  }
+
+  const deviceId = generateDeviceId();
+  persistDeviceId(deviceId);
+
+  return deviceId;
+}
+
+/**
+ * Screen rotation must not change the device profile, so the shorter side
+ * always comes first.
+ */
+export function getNormalizedScreenResolution(): string {
+  if (typeof window === 'undefined' || !window.screen) {
+    return FALLBACK_SCREEN_RESOLUTION;
+  }
+
+  const width = Math.round(window.screen.width);
+  const height = Math.round(window.screen.height);
+
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return FALLBACK_SCREEN_RESOLUTION;
+  }
+
+  return `${Math.min(width, height)}x${Math.max(width, height)}`;
 }
 
 function readJson<T>(key: string): T | null {

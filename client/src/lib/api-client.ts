@@ -18,9 +18,108 @@ import type {
   WineType,
 } from '@/types/api';
 
-export const API_URL = (
-  process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000'
-).replace(/\/+$/, '');
+const DEFAULT_API_PORT = 4000;
+const LOOPBACK_HOSTNAMES = new Set([
+  'localhost',
+  '127.0.0.1',
+  '0.0.0.0',
+  '::1',
+  '[::1]',
+]);
+
+function normalizeConfiguredApiUrl(
+  value: string | undefined,
+): URL | null {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `http://${trimmed.replace(/^\/+/, '')}`;
+
+  try {
+    const url = new URL(candidate);
+
+    return url.hostname ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function formatHostname(hostname: string): string {
+  if (!hostname) {
+    return 'localhost';
+  }
+
+  return hostname.includes(':') && !hostname.startsWith('[')
+    ? `[${hostname}]`
+    : hostname;
+}
+
+function buildBaseUrl(
+  protocol: string,
+  hostname: string,
+  port: string,
+): string {
+  const safeProtocol = protocol === 'https:' ? 'https:' : 'http:';
+
+  return `${safeProtocol}//${formatHostname(hostname)}:${port}`;
+}
+
+/**
+ * Resolves the API address at runtime so the same build works from the
+ * organizer's machine and from any phone or tablet on the local Wi-Fi.
+ * NEXT_PUBLIC_API_URL is treated only as an optional port/protocol hint:
+ * its hostname is replaced with the current browser hostname on the LAN.
+ * Malformed values such as `192.168.1.50:4000` are normalized safely.
+ */
+export function getApiBaseUrl(): string {
+  const configured = normalizeConfiguredApiUrl(
+    process.env.NEXT_PUBLIC_API_URL,
+  );
+  const configuredPort = configured?.port || String(DEFAULT_API_PORT);
+
+  if (typeof window === 'undefined') {
+    return configured
+      ? buildBaseUrl(
+          configured.protocol,
+          configured.hostname,
+          configuredPort,
+        )
+      : buildBaseUrl('http:', 'localhost', configuredPort);
+  }
+
+  const browserHostname = window.location.hostname || 'localhost';
+  const browserProtocol = window.location.protocol;
+  const browserIsLoopback = LOOPBACK_HOSTNAMES.has(
+    browserHostname.toLowerCase(),
+  );
+
+  if (!browserIsLoopback) {
+    return buildBaseUrl(
+      browserProtocol,
+      browserHostname,
+      configuredPort,
+    );
+  }
+
+  if (configured) {
+    return buildBaseUrl(
+      configured.protocol,
+      configured.hostname,
+      configuredPort,
+    );
+  }
+
+  return buildBaseUrl(
+    browserProtocol,
+    browserHostname,
+    String(DEFAULT_API_PORT),
+  );
+}
 
 interface ApiErrorPayload {
   message?: string | string[];
@@ -90,7 +189,7 @@ async function request<T>(
   let response: Response;
 
   try {
-    response = await fetch(`${API_URL}${path}`, {
+    response = await fetch(`${getApiBaseUrl()}${path}`, {
       method,
       headers,
       body:

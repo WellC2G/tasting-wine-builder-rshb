@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
@@ -9,10 +10,13 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { compare, hash } from 'bcryptjs';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, Repository } from 'typeorm';
 
 import { isUniqueViolation } from '../../../common/database/is-unique-violation';
-import type { RequestContext } from '../../../common/http/request-context';
+import {
+  isSharedDockerGatewayIp,
+  type RequestContext,
+} from '../../../common/http/request-context';
 import { WineResponseDto } from '../../catalog/dto/wine-response.dto';
 import {
   TastingEvent,
@@ -25,7 +29,10 @@ import {
 } from '../../events/entities/tasting-round.entity';
 import {
   BCRYPT_SALT_ROUNDS,
+  GUEST_IP_CHANGED_MESSAGE,
+  GUEST_SAME_IP_CONFLICT_MESSAGE,
   JWT_EXPIRES_IN_SECONDS,
+  VPN_PROXY_FORBIDDEN_MESSAGE,
 } from '../auth.constants';
 import {
   AuthTokenResponseDto,
@@ -41,6 +48,15 @@ import { UserResponseDto } from '../dto/user-response.dto';
 import { Participant } from '../entities/participant.entity';
 import { User, UserRole } from '../entities/user.entity';
 import { FingerprintService } from './fingerprint.service';
+
+interface FindOrCreateParticipantParams {
+  eventId: string;
+  nickname: string;
+  context: RequestContext;
+  deviceId: string;
+  fingerprintHash: string;
+  screenResolution: string;
+}
 
 @Injectable()
 export class AuthService {
@@ -123,6 +139,10 @@ export class AuthService {
     dto: GuestJoinDto,
     context: RequestContext,
   ): Promise<GuestJoinResponseDto> {
+    if (context.hasProxyHeaders) {
+      throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+    }
+
     const event = await this.eventsRepository.findOne({
       where: { sessionPin: dto.sessionPin },
       relations: {
@@ -147,16 +167,20 @@ export class AuthService {
 
     const fingerprintHash = this.fingerprintService.calculate({
       clientIp: context.clientIp,
+      deviceId: dto.deviceId,
       userAgent: context.userAgent,
       screenResolution: dto.screenResolution,
       eventId: event.id,
     });
 
-    const participant = await this.findOrCreateParticipant(
-      event.id,
+    const participant = await this.findOrCreateParticipant({
+      eventId: event.id,
+      nickname: dto.nickname,
+      context,
+      deviceId: dto.deviceId,
       fingerprintHash,
-      dto.nickname,
-    );
+      screenResolution: dto.screenResolution,
+    });
 
     const currentRound = this.selectCurrentRound(event.rounds);
 
@@ -176,23 +200,81 @@ export class AuthService {
   }
 
   private async findOrCreateParticipant(
-    eventId: string,
-    fingerprintHash: string,
-    nickname: string,
+    params: FindOrCreateParticipantParams,
   ): Promise<Participant> {
-    const existingParticipant = await this.participantsRepository.findOneBy({
+    const {
       eventId,
+      nickname,
+      context,
+      deviceId,
       fingerprintHash,
-    });
+      screenResolution,
+    } = params;
+    const environmentHash =
+      this.fingerprintService.calculateEnvironmentHash({
+        userAgent: context.userAgent,
+        screenResolution,
+        eventId,
+      });
+    const candidates = await this.findParticipantCandidates(
+      eventId,
+      context.clientIp,
+      deviceId,
+      fingerprintHash,
+    );
+    const sameDeviceParticipants = candidates.filter(
+      (participant) => participant.deviceId === deviceId,
+    );
 
-    if (existingParticipant) {
-      existingParticipant.nickname = nickname;
-      existingParticipant.isOnline = true;
-      return this.participantsRepository.save(existingParticipant);
+    if (sameDeviceParticipants.length > 0) {
+      const sameDeviceWithSameIp = sameDeviceParticipants.find(
+        (participant) => participant.clientIp === context.clientIp,
+      );
+
+      if (sameDeviceWithSameIp) {
+        return this.resumeParticipant(
+          sameDeviceWithSameIp,
+          nickname,
+          environmentHash,
+        );
+      }
+
+      if (context.clientIp !== 'unknown') {
+        throw new ForbiddenException(GUEST_IP_CHANGED_MESSAGE);
+      }
+
+      return this.resumeParticipant(
+        sameDeviceParticipants[0],
+        nickname,
+        environmentHash,
+      );
+    }
+
+    if (context.clientIp !== 'unknown') {
+      const sameIpParticipants = candidates.filter(
+        (participant) => participant.clientIp === context.clientIp,
+      );
+
+      if (sameIpParticipants.length > 0) {
+        const usesSharedDockerGateway =
+          isSharedDockerGatewayIp(context.clientIp) &&
+          !context.hasForwardedClientIp;
+        const hasSameEnvironment = sameIpParticipants.some(
+          (participant) =>
+            participant.environmentHash === environmentHash,
+        );
+
+        if (!usesSharedDockerGateway || hasSameEnvironment) {
+          throw new ConflictException(GUEST_SAME_IP_CONFLICT_MESSAGE);
+        }
+      }
     }
 
     const participant = this.participantsRepository.create({
       eventId,
+      clientIp: context.clientIp,
+      deviceId,
+      environmentHash,
       fingerprintHash,
       nickname,
       guestSessionToken: this.createGuestSessionToken(),
@@ -221,10 +303,45 @@ export class AuthService {
         throw error;
       }
 
-      concurrentlyCreated.nickname = nickname;
-      concurrentlyCreated.isOnline = true;
-      return this.participantsRepository.save(concurrentlyCreated);
+      return this.resumeParticipant(
+        concurrentlyCreated,
+        nickname,
+        environmentHash,
+      );
     }
+  }
+
+  private async findParticipantCandidates(
+    eventId: string,
+    clientIp: string,
+    deviceId: string,
+    fingerprintHash: string,
+  ): Promise<Participant[]> {
+    const where: FindOptionsWhere<Participant>[] = [
+      { eventId, fingerprintHash },
+      { eventId, deviceId },
+    ];
+
+    if (clientIp !== 'unknown') {
+      where.push({ eventId, clientIp });
+    }
+
+    return this.participantsRepository.find({
+      where,
+      order: { joinedAt: 'ASC' },
+    });
+  }
+
+  private resumeParticipant(
+    participant: Participant,
+    nickname: string,
+    environmentHash: string,
+  ): Promise<Participant> {
+    participant.nickname = nickname;
+    participant.isOnline = true;
+    participant.environmentHash = environmentHash;
+
+    return this.participantsRepository.save(participant);
   }
 
   private selectCurrentRound(

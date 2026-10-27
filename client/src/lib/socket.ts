@@ -1,6 +1,6 @@
 import { io, type Socket } from 'socket.io-client';
 
-import { API_URL } from './api-client';
+import { getApiBaseUrl } from './api-client';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
@@ -14,9 +14,9 @@ export type TastingSocket = Socket<
 export function createTastingSocket(
   token: string,
 ): TastingSocket {
-  return io(`${API_URL}/tasting`, {
+  return io(`${getApiBaseUrl()}/tasting`, {
     auth: { token },
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 800,

@@ -14,7 +14,7 @@ export class ExportMetaDto {
 
   @ApiProperty({
     example:
-      'http://localhost:4000/api/v1/mock/peoples-rating/batch',
+      'http://127.0.0.1:4000/api/v1/mock/peoples-rating/batch',
   })
   targetEndpoint!: string;
 

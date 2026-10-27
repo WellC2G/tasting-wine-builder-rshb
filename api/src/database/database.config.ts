@@ -12,6 +12,7 @@ import { InitialCatalogSchema1730000000000 } from './migrations/1730000000000-In
 import { EventsAuthSchema1792945874561 } from './migrations/1792945874561-EventsAuthSchema';
 import { RatingsSchema1792950279937 } from './migrations/1792950279937-RatingsSchema';
 import { ExportLogsSchema1792951008275 } from './migrations/1792951008275-ExportLogsSchema';
+import { ParticipantNetworkIdentity1793140634953 } from './migrations/1793140634953-ParticipantNetworkIdentity';
 
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = 5432;
@@ -53,6 +54,7 @@ export function buildTypeOrmOptions(
       EventsAuthSchema1792945874561,
       RatingsSchema1792950279937,
       ExportLogsSchema1792951008275,
+      ParticipantNetworkIdentity1793140634953,
     ],
     migrationsRun: true,
     synchronize: false,

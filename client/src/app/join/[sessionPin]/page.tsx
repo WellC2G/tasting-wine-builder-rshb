@@ -50,6 +50,8 @@ import {
 } from '@/lib/rating';
 import {
   getGuestSession,
+  getNormalizedScreenResolution,
+  getOrCreateDeviceId,
   getStoredRating,
   setGuestSession,
   setStoredRating,
@@ -316,6 +318,7 @@ export default function GuestJoinPage() {
           sessionPin,
           nickname: trimmedNickname,
           screenResolution: resolutionValue,
+          deviceId: getOrCreateDeviceId(),
         });
 
       setNickname(trimmedNickname);
@@ -340,10 +343,7 @@ export default function GuestJoinPage() {
     }
 
     autoJoinRef.current = true;
-    const resolution =
-      typeof window !== 'undefined'
-        ? `${window.screen.width}x${window.screen.height}`
-        : '390x844';
+    const resolution = getNormalizedScreenResolution();
 
     setScreenResolution(resolution);
     const stored = getGuestSession(sessionPin);
@@ -471,10 +471,7 @@ export default function GuestJoinPage() {
   ) => {
     event.preventDefault();
     const resolution =
-      screenResolution ||
-      (typeof window !== 'undefined'
-        ? `${window.screen.width}x${window.screen.height}`
-        : '390x844');
+      screenResolution || getNormalizedScreenResolution();
 
     await joinSession(nickname, resolution);
   };

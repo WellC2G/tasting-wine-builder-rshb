@@ -18,6 +18,8 @@ import { TastingEvent } from '../../events/entities/tasting-event.entity';
   unique: true,
 })
 @Index('idx_participants_event_id', ['eventId'])
+@Index('idx_participants_event_client_ip', ['eventId', 'clientIp'])
+@Index('idx_participants_event_device_id', ['eventId', 'deviceId'])
 export class Participant {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -40,6 +42,30 @@ export class Participant {
 
   @Column({ name: 'fingerprint_hash', type: 'varchar', length: 64 })
   fingerprintHash!: string;
+
+  @Column({
+    name: 'client_ip',
+    type: 'varchar',
+    length: 64,
+    default: 'unknown',
+  })
+  clientIp!: string;
+
+  @Column({
+    name: 'device_id',
+    type: 'varchar',
+    length: 128,
+    default: 'legacy',
+  })
+  deviceId!: string;
+
+  @Column({
+    name: 'environment_hash',
+    type: 'varchar',
+    length: 64,
+    default: 'legacy',
+  })
+  environmentHash!: string;
 
   @Column({ type: 'varchar', length: 80 })
   nickname!: string;

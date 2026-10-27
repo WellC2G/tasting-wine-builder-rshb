@@ -1,4 +1,4 @@
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+import { ApiExternalLink } from '@/components/api-external-link';
 
 const features = [
   {
@@ -116,10 +116,8 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a
-                href={`${apiUrl}/api/docs`}
-                target="_blank"
-                rel="noreferrer"
+              <ApiExternalLink
+                path="/api/docs"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
                 Документация API
@@ -137,15 +135,13 @@ export default function HomePage() {
                     strokeLinejoin="round"
                   />
                 </svg>
-              </a>
-              <a
-                href={`${apiUrl}/api/v1/health`}
-                target="_blank"
-                rel="noreferrer"
+              </ApiExternalLink>
+              <ApiExternalLink
+                path="/api/v1/health"
                 className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 text-sm font-semibold text-stone-100 transition hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
                 Проверить состояние API
-              </a>
+              </ApiExternalLink>
             </div>
 
             <dl className="mt-10 grid max-w-xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
@@ -351,22 +347,18 @@ export default function HomePage() {
               </pre>
             </div>
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <a
-                href={`${apiUrl}/api/docs`}
-                target="_blank"
-                rel="noreferrer"
+              <ApiExternalLink
+                path="/api/docs"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-stone-950 transition hover:bg-stone-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               >
                 Изучить API
-              </a>
-              <a
-                href={`${apiUrl}/api/v1/health`}
-                target="_blank"
-                rel="noreferrer"
+              </ApiExternalLink>
+              <ApiExternalLink
+                path="/api/v1/health"
                 className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/15 px-5 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
               >
                 Проверить стек
-              </a>
+              </ApiExternalLink>
             </div>
           </div>
         </section>

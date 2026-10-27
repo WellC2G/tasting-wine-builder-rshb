@@ -175,6 +175,7 @@ export interface GuestJoinInput {
   sessionPin: string;
   nickname: string;
   screenResolution: string;
+  deviceId: string;
 }
 
 export interface ParkerBreakdown {

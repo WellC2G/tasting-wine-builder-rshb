@@ -232,6 +232,9 @@ export interface RatingResponse {
   totalScore: number;
   qualityCategory: ParkerQualityCategory;
   qualityLabel: string;
+  organoleptics: Organoleptics;
+  aromaTags: string[];
+  personalNotes: string | null;
 }
 
 export interface CriteriaMeans {

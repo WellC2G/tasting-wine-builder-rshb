@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronUp,
+  Download,
   Hash,
   Loader2,
   LogOut,
@@ -21,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 
+import { ExportResultModal } from '@/components/export-result-modal';
 import { Modal } from '@/components/modal';
 import { PageLoader } from '@/components/page-loader';
 import { Toast } from '@/components/toast';
@@ -43,6 +45,7 @@ import {
 import { cn } from '@/lib/cn';
 import type {
   EventSummary,
+  ExportResponse,
   ScaleType,
   TastingMode,
   Wine,
@@ -81,6 +84,15 @@ export default function HostEventsPage() {
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [exportingEventId, setExportingEventId] = useState<
+    string | null
+  >(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportResult, setExportResult] =
+    useState<ExportResponse | null>(null);
+  const [exportEventId, setExportEventId] = useState<string | null>(
+    null,
+  );
 
   const loadEvents = async (isRefresh = false) => {
     if (isRefresh) {
@@ -295,6 +307,35 @@ export default function HostEventsPage() {
     }
   };
 
+  const handleExport = async (event: EventSummary) => {
+    setExportingEventId(event.id);
+
+    try {
+      const result = await apiClient.export.create(event.id);
+      setExportResult(result);
+      setExportEventId(event.id);
+      setExportOpen(true);
+      setEvents((current) =>
+        current.map((item) =>
+          item.id === event.id
+            ? { ...item, status: 'EXPORTED' }
+            : item,
+        ),
+      );
+      setToast('Результаты выгружены в Народный рейтинг');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.replace('/host/login');
+        return;
+      }
+
+      setToast(getApiErrorMessage(error));
+    } finally {
+      setExportingEventId(null);
+    }
+  };
+
   if (!ready || !token) {
     return <PageLoader message="Проверяем доступ организатора…" />;
   }
@@ -471,7 +512,10 @@ export default function HostEventsPage() {
                       className="h-4 w-4"
                       aria-hidden="true"
                     />
-                    Пульт
+                    {event.status === 'FINISHED' ||
+                    event.status === 'EXPORTED'
+                      ? 'Просмотр статистики'
+                      : 'Пульт'}
                   </Link>
                   <Link
                     href={`/host/events/${event.id}/screen`}
@@ -484,6 +528,29 @@ export default function HostEventsPage() {
                     Экран
                   </Link>
                 </div>
+
+                {event.status === 'FINISHED' ||
+                event.status === 'EXPORTED' ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleExport(event)}
+                    disabled={exportingEventId === event.id}
+                    className="mt-2 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-wine-400/30 bg-wine-500/10 px-3 text-sm font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50"
+                  >
+                    {exportingEventId === event.id ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Download
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
+                    )}
+                    Выгрузить в Народный рейтинг
+                  </button>
+                ) : null}
               </article>
             ))}
           </div>
@@ -817,6 +884,13 @@ export default function HostEventsPage() {
           </div>
         </form>
       </Modal>
+
+      <ExportResultModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        result={exportResult}
+        eventId={exportEventId ?? ''}
+      />
 
       <Toast message={toast} onClose={() => setToast(null)} tone="success" />
     </main>

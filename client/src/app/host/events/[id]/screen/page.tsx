@@ -76,6 +76,8 @@ export default function PresentationScreenPage() {
   const [wine, setWine] = useState<RevealedWine | null>(null);
   const [stats, setStats] = useState<RoundStats | null>(null);
   const [counts, setCounts] = useState<ParticipantCounterPayload>({
+    eventId,
+    roundId: null,
     connectedCount: 0,
     votedCount: 0,
   });
@@ -96,6 +98,8 @@ export default function PresentationScreenPage() {
   ): Promise<void> => {
     const live = await apiClient.events.liveState(currentEventId);
     setCounts({
+      eventId: currentEventId,
+      roundId: live.currentRound?.roundId ?? null,
       connectedCount: live.connectedParticipantCount,
       votedCount: 0,
     });
@@ -208,7 +212,11 @@ export default function PresentationScreenPage() {
       setWine(payload.wine ?? null);
       setStats(null);
       setEndsAt(new Date(payload.endsAt).getTime());
-      setCounts((current) => ({ ...current, votedCount: 0 }));
+      setCounts((current) => ({
+        ...current,
+        eventId,
+        roundId: payload.roundId,
+      }));
     };
 
     const handleVotingClosed = (payload: VotingClosedPayload) => {
@@ -223,14 +231,29 @@ export default function PresentationScreenPage() {
     const handleBottleRevealed = (
       payload: BottleRevealedPayload,
     ) => {
-      setRound((current) =>
-        current && current.roundId === payload.roundId
-          ? { ...current, status: 'REVEALED' }
-          : current,
-      );
+      setRound((current) => ({
+        roundId: payload.roundId,
+        orderNumber:
+          payload.orderNumber ?? current?.orderNumber ?? 0,
+        blindLabel:
+          payload.blindLabel ??
+          current?.blindLabel ??
+          'Раскрытый образец',
+        status: 'REVEALED',
+        durationSeconds: current?.durationSeconds ?? 0,
+        startedAt: current?.startedAt ?? null,
+        endsAt: null,
+        remainingSeconds: 0,
+      }));
       setWine(payload.wine);
       setStats(payload.stats);
       setEndsAt(null);
+      setCounts((current) => ({
+        ...current,
+        eventId,
+        roundId: payload.roundId,
+        votedCount: payload.stats.totalRatings,
+      }));
       setToast({
         message: 'Карточка образца раскрыта!',
         tone: 'success',
@@ -238,7 +261,27 @@ export default function PresentationScreenPage() {
     };
 
     const handleCounter = (payload: ParticipantCounterPayload) => {
-      setCounts(payload);
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setCounts((current) => {
+        const matchesCurrentRound =
+          payload.roundId !== null &&
+          payload.roundId === round?.roundId;
+
+        return {
+          ...current,
+          eventId,
+          connectedCount: payload.connectedCount,
+          ...(matchesCurrentRound
+            ? {
+                roundId: payload.roundId,
+                votedCount: payload.votedCount,
+              }
+            : {}),
+        };
+      });
     };
 
     const handleError = (payload: SocketMessagePayload) => {
@@ -260,7 +303,27 @@ export default function PresentationScreenPage() {
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
-  }, [socket]);
+  }, [socket, eventId, round?.roundId]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const joinEvent = () => {
+      socket.emit('host:join_event', { eventId });
+    };
+
+    if (socket.connected) {
+      joinEvent();
+    }
+
+    socket.on('connect', joinEvent);
+
+    return () => {
+      socket.off('connect', joinEvent);
+    };
+  }, [socket, eventId]);
 
   useEffect(() => {
     if (!socket || connectCount <= 1) {
@@ -434,7 +497,13 @@ export default function PresentationScreenPage() {
                         <div className="mt-7">
                           <CriteriaBars criteria={stats.criteriaMeans} />
                         </div>
-                        <div className="mt-6 grid grid-cols-2 gap-3 text-xs text-stone-500">
+                        <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-stone-500">
+                          <div className="rounded-xl border border-white/10 p-3">
+                            <p>Всего голосов</p>
+                            <p className="mt-1 text-lg font-semibold text-white">
+                              {stats.totalRatings}
+                            </p>
+                          </div>
                           <div className="rounded-xl border border-white/10 p-3">
                             <p>Валидных оценок</p>
                             <p className="mt-1 text-lg font-semibold text-white">

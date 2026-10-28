@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 
 import {
   TastingEvent,
+  TastingEventStatus,
   TastingMode,
 } from '../events/entities/tasting-event.entity';
 import {
@@ -88,8 +89,9 @@ export class TastingSessionService {
 
   async getParticipantCounter(
     eventId: string,
+    roundId?: string,
   ): Promise<ParticipantCounterPayload> {
-    return this.participantCounterService.getCounter(eventId);
+    return this.participantCounterService.getCounter(eventId, roundId);
   }
 
   async startRound(
@@ -104,12 +106,6 @@ export class TastingSessionService {
       hostId,
     );
 
-    if (round.status === TastingRoundStatus.REVEALED) {
-      throw new ConflictException(
-        'Раунд уже раскрыт и не может быть запущен повторно',
-      );
-    }
-
     const duration = durationSeconds ?? round.durationSeconds;
 
     if (
@@ -122,6 +118,20 @@ export class TastingSessionService {
       );
     }
 
+    for (const otherRound of event.rounds) {
+      if (
+        otherRound.id !== round.id &&
+        otherRound.status === TastingRoundStatus.ACTIVE
+      ) {
+        otherRound.status = TastingRoundStatus.VOTING_CLOSED;
+        await this.roundsRepository.save(otherRound);
+        this.roomStateService.clearRoundTimer(
+          event.id,
+          otherRound.id,
+        );
+      }
+    }
+
     const startedAt = new Date();
 
     round.status = TastingRoundStatus.ACTIVE;
@@ -130,6 +140,16 @@ export class TastingSessionService {
     round.revealedAt = null;
 
     await this.roundsRepository.save(round);
+
+    if (
+      event.status === TastingEventStatus.DRAFT ||
+      event.status === TastingEventStatus.FINISHED
+    ) {
+      event.status = TastingEventStatus.ACTIVE;
+      await this.eventsRepository.save(event);
+    }
+
+    this.roomStateService.clearLastViewedRound(event.id);
 
     return {
       event,
@@ -184,8 +204,43 @@ export class TastingSessionService {
     round.status = TastingRoundStatus.REVEALED;
     round.revealedAt = new Date();
     await this.roundsRepository.save(round);
+    this.roomStateService.setLastViewedRound(event.id, round.id);
+
+    if (
+      event.status !== TastingEventStatus.EXPORTED &&
+      event.rounds.every(
+        (eventRound) =>
+          eventRound.status === TastingRoundStatus.REVEALED,
+      )
+    ) {
+      event.status = TastingEventStatus.FINISHED;
+      await this.eventsRepository.save(event);
+    }
 
     return { event, round, wine: round.wine };
+  }
+
+  async findRoundForStatistics(
+    eventId: string,
+    roundId: string,
+    hostId: string,
+  ): Promise<OwnedRound> {
+    const ownedRound = await this.findOwnedRound(
+      eventId,
+      roundId,
+      hostId,
+    );
+
+    if (
+      ownedRound.round.status !== TastingRoundStatus.REVEALED &&
+      ownedRound.event.mode !== TastingMode.OPEN
+    ) {
+      throw new BadRequestException(
+        'Статистика доступна только после раскрытия образца',
+      );
+    }
+
+    return ownedRound;
   }
 
   async getLiveState(
@@ -222,7 +277,7 @@ export class TastingSessionService {
         }),
       ]);
 
-    const currentRound = this.selectLiveRound(event.rounds);
+    const currentRound = this.selectLiveRound(event.id, event.rounds);
 
     return {
       eventId: event.id,
@@ -268,6 +323,7 @@ export class TastingSessionService {
   }
 
   private selectLiveRound(
+    eventId: string,
     rounds: TastingRound[],
   ): TastingRound | null {
     const sortedRounds = [...rounds].sort(
@@ -280,6 +336,16 @@ export class TastingSessionService {
 
     if (activeRound) {
       return activeRound;
+    }
+
+    const lastViewedRoundId =
+      this.roomStateService.getLastViewedRound(eventId);
+    const lastViewedRound = lastViewedRoundId
+      ? sortedRounds.find((round) => round.id === lastViewedRoundId)
+      : undefined;
+
+    if (lastViewedRound) {
+      return lastViewedRound;
     }
 
     const lastManagedRound = [...sortedRounds]

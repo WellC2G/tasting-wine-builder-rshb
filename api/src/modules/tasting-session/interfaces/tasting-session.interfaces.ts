@@ -14,8 +14,14 @@ export interface RoundActionPayload {
 }
 
 export interface ParticipantCounterPayload {
+  eventId: string;
+  roundId: string | null;
   connectedCount: number;
   votedCount: number;
+}
+
+export interface JoinEventPayload {
+  eventId: string;
 }
 
 export interface WineDetails {

@@ -21,14 +21,22 @@ export interface VotingClosedPayload {
 
 export interface BottleRevealedPayload {
   roundId: string;
+  orderNumber?: number;
+  blindLabel?: string;
   wine: RevealedWine;
   stats: RoundStats;
   message: string;
 }
 
 export interface ParticipantCounterPayload {
+  eventId: string;
+  roundId: string | null;
   connectedCount: number;
   votedCount: number;
+}
+
+export interface JoinEventPayload {
+  eventId: string;
 }
 
 export interface SocketMessagePayload {
@@ -58,7 +66,9 @@ export interface ServerToClientEvents {
 }
 
 export interface ClientToServerEvents {
+  'host:join_event': (payload: JoinEventPayload) => void;
   'host:start_round': (payload: StartRoundPayload) => void;
   'host:lock_voting': (payload: RoundActionPayload) => void;
   'host:reveal_bottle': (payload: RoundActionPayload) => void;
+  'host:show_stats': (payload: RoundActionPayload) => void;
 }

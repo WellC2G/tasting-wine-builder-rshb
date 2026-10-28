@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   CheckCircle2,
   Clock3,
-  Download,
   Eye,
   Hash,
   Loader2,
@@ -23,10 +22,14 @@ import {
 } from 'lucide-react';
 
 import { ConnectionBanner } from '@/components/connection-banner';
+import { CriteriaBars } from '@/components/criteria-bars';
+import { ExportResultModal } from '@/components/export-result-modal';
 import { Modal } from '@/components/modal';
 import { PageLoader } from '@/components/page-loader';
 import { QrPanel } from '@/components/qr-panel';
+import { RadarProfileChart } from '@/components/radar-profile-chart';
 import { Toast } from '@/components/toast';
+import { WineDetailsCard } from '@/components/wine-details-card';
 import { useHostSession } from '@/hooks/use-host-session';
 import { useTastingSocket } from '@/hooks/use-tasting-socket';
 import {
@@ -45,11 +48,13 @@ import {
   pluralize,
   roundStatusTone,
 } from '@/lib/format';
+import { qualityTone } from '@/lib/rating';
 import { clearHostSession } from '@/lib/session';
 import type {
   EventDetail,
   EventRound,
   ExportResponse,
+  RoundStats,
   RoundStatus,
 } from '@/types/api';
 import type {
@@ -96,14 +101,19 @@ export default function HostControlPage() {
     string | null
   >(null);
   const [counts, setCounts] = useState<ParticipantCounterPayload>({
+    eventId,
+    roundId: null,
     connectedCount: 0,
     votedCount: 0,
   });
   const [endsAt, setEndsAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [pendingAction, setPendingAction] = useState<
-    'start' | 'lock' | 'reveal' | null
+    'start' | 'lock' | 'reveal' | 'stats' | null
   >(null);
+  const [selectedRoundStats, setSelectedRoundStats] =
+    useState<RoundStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [qrTab, setQrTab] = useState<'guest' | 'host'>('guest');
   const [exporting, setExporting] = useState(false);
@@ -169,6 +179,8 @@ export default function HostControlPage() {
         setEvent(mergedEvent);
         setSelectedRoundId(initialRoundId);
         setCounts({
+          eventId,
+          roundId: liveRound?.roundId ?? null,
           connectedCount:
             live?.connectedParticipantCount ??
             detail.connectedParticipantCount,
@@ -188,6 +200,7 @@ export default function HostControlPage() {
           if (!cancelled && stats) {
             setCounts((current) => ({
               ...current,
+              roundId: initialRoundId,
               votedCount: stats.totalRatings,
             }));
           }
@@ -241,7 +254,11 @@ export default function HostControlPage() {
       );
       setSelectedRoundId(payload.roundId);
       setEndsAt(new Date(payload.endsAt).getTime());
-      setCounts((current) => ({ ...current, votedCount: 0 }));
+      setSelectedRoundStats(null);
+      setCounts((current) => ({
+        ...current,
+        roundId: payload.roundId,
+      }));
       setPendingAction(null);
       setToast({ message: 'Раунд запущен', tone: 'success' });
     };
@@ -281,9 +298,17 @@ export default function HostControlPage() {
             }
           : current,
       );
+      setSelectedRoundId(payload.roundId);
+      setSelectedRoundStats(payload.stats);
       setLastReveal(payload);
       setEndsAt(null);
       setPendingAction(null);
+      setCounts((current) => ({
+        ...current,
+        eventId,
+        roundId: payload.roundId,
+        votedCount: payload.stats.totalRatings,
+      }));
       const score =
         payload.stats.meanScore !== null
           ? ` · ${payload.stats.meanScore.toLocaleString('ru-RU', {
@@ -298,7 +323,27 @@ export default function HostControlPage() {
     };
 
     const handleCounter = (payload: ParticipantCounterPayload) => {
-      setCounts(payload);
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setCounts((current) => {
+        const matchesSelectedRound =
+          payload.roundId !== null &&
+          payload.roundId === selectedRoundId;
+
+        return {
+          ...current,
+          eventId,
+          connectedCount: payload.connectedCount,
+          ...(matchesSelectedRound
+            ? {
+                roundId: payload.roundId,
+                votedCount: payload.votedCount,
+              }
+            : {}),
+        };
+      });
     };
 
     const handleError = (payload: SocketMessagePayload) => {
@@ -321,7 +366,27 @@ export default function HostControlPage() {
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
-  }, [socket, selectedRoundId]);
+  }, [socket, selectedRoundId, eventId]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const joinEvent = () => {
+      socket.emit('host:join_event', { eventId });
+    };
+
+    if (socket.connected) {
+      joinEvent();
+    }
+
+    socket.on('connect', joinEvent);
+
+    return () => {
+      socket.off('connect', joinEvent);
+    };
+  }, [socket, eventId]);
 
   useEffect(() => {
     if (!socket || connectCount <= 1) {
@@ -339,6 +404,7 @@ export default function HostControlPage() {
 
         setCounts((current) => ({
           ...current,
+          roundId: live.currentRound?.roundId ?? null,
           connectedCount: live.connectedParticipantCount,
         }));
 
@@ -373,6 +439,7 @@ export default function HostControlPage() {
           if (!cancelled && stats) {
             setCounts((current) => ({
               ...current,
+              roundId: live.currentRound?.roundId ?? current.roundId,
               votedCount: stats.totalRatings,
             }));
           }
@@ -412,6 +479,39 @@ export default function HostControlPage() {
     [rounds, selectedRoundId],
   );
 
+  useEffect(() => {
+    if (!selectedRound || selectedRound.status !== 'REVEALED') {
+      setSelectedRoundStats(null);
+      setStatsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setStatsLoading(true);
+
+    void apiClient.ratings
+      .stats(selectedRound.id)
+      .then((stats) => {
+        if (!cancelled) {
+          setSelectedRoundStats(stats);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSelectedRoundStats(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setStatsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRound?.id, selectedRound?.status]);
+
   const remainingSeconds = endsAt
     ? Math.max(0, Math.ceil((endsAt - now) / 1000))
     : 0;
@@ -426,12 +526,9 @@ export default function HostControlPage() {
       : 0;
   const controlsDisabled = !connected || pendingAction !== null;
   const canStart =
-    controlsDisabled ||
-    !selectedRound ||
-    selectedRound.status === 'ACTIVE' ||
-    selectedRound.status === 'REVEALED'
-      ? false
-      : true;
+    !controlsDisabled &&
+    selectedRound !== null &&
+    selectedRound.status !== 'ACTIVE';
   const canLock =
     !controlsDisabled && selectedRound?.status === 'ACTIVE';
   const canReveal =
@@ -440,6 +537,7 @@ export default function HostControlPage() {
 
   const handleSelectRound = (round: EventRound) => {
     setSelectedRoundId(round.id);
+    setSelectedRoundStats(null);
     setEndsAt(computeEndsAt(round));
 
     void apiClient.ratings
@@ -447,11 +545,16 @@ export default function HostControlPage() {
       .then((stats) =>
         setCounts((current) => ({
           ...current,
+          roundId: round.id,
           votedCount: stats.totalRatings,
         })),
       )
       .catch(() => {
-        setCounts((current) => ({ ...current, votedCount: 0 }));
+        setCounts((current) => ({
+          ...current,
+          roundId: round.id,
+          votedCount: 0,
+        }));
       });
   };
 
@@ -492,6 +595,18 @@ export default function HostControlPage() {
     });
   };
 
+  const handleShowStats = () => {
+    if (!socket || !selectedRound || !connected) {
+      return;
+    }
+
+    setPendingAction('stats');
+    socket.emit('host:show_stats', {
+      eventId,
+      roundId: selectedRound.id,
+    });
+  };
+
   const handleExport = async () => {
     setExporting(true);
 
@@ -520,26 +635,6 @@ export default function HostControlPage() {
     } finally {
       setExporting(false);
     }
-  };
-
-  const downloadExportPayload = () => {
-    if (!exportResult) {
-      return;
-    }
-
-    const blob = new Blob(
-      [JSON.stringify(exportResult.dispatchedPayload, null, 2)],
-      { type: 'application/json' },
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-
-    link.href = url;
-    link.download = `tasting-export-${eventId}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
   };
 
   if (!ready || !token || loading) {
@@ -708,7 +803,9 @@ export default function HostControlPage() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                Текущий раунд
+                {selectedRound?.status === 'REVEALED'
+                  ? 'Статистика раунда'
+                  : 'Текущий раунд'}
               </p>
               <h2 className="mt-1 text-2xl font-semibold text-white">
                 {selectedRound?.blindLabel ?? 'Раунд не выбран'}
@@ -731,115 +828,273 @@ export default function HostControlPage() {
             ) : null}
           </div>
 
-          <div className="mt-5 flex items-center gap-4 rounded-2xl border border-white/10 bg-stone-950/60 p-4">
-            <Clock3
-              className="h-6 w-6 shrink-0 text-wine-300"
-              aria-hidden="true"
-            />
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
-                Таймер раунда
-              </p>
-              <p className="font-mono text-4xl font-semibold tracking-tight text-white">
-                {formatCountdown(remainingSeconds)}
-              </p>
+          {selectedRound?.status === 'REVEALED' ? (
+            <div className="mt-5 space-y-5">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  data-testid="control-show-stats"
+                  onClick={handleShowStats}
+                  disabled={!connected || pendingAction !== null}
+                  className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-wine-600 px-4 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pendingAction === 'stats' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Radio className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Показать статистику
+                </button>
+                <button
+                  type="button"
+                  data-testid="control-restart-round"
+                  onClick={handleStartRound}
+                  disabled={!canStart}
+                  className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pendingAction === 'start' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Play className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Перезапустить голосование
+                </button>
+              </div>
+
+              <WineDetailsCard wine={selectedRound.wine} />
+
+              {selectedRoundStats ? (
+                <div className="space-y-5">
+                  <div className="rounded-2xl border border-white/10 bg-stone-950/60 p-5">
+                    <div className="flex flex-wrap items-end justify-between gap-4">
+                      <div>
+                        <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                          Средний балл Паркера
+                        </p>
+                        <p className="mt-1 text-5xl font-semibold tracking-tight text-wine-200">
+                          {selectedRoundStats.meanScore !== null
+                            ? selectedRoundStats.meanScore.toLocaleString(
+                                'ru-RU',
+                                { maximumFractionDigits: 1 },
+                              )
+                            : '—'}
+                        </p>
+                      </div>
+                      <span
+                        className={cn(
+                          'inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium',
+                          qualityTone(
+                            selectedRoundStats.qualityCategory,
+                          ),
+                        )}
+                      >
+                        {selectedRoundStats.qualityLabel ??
+                          'Категория не определена'}
+                      </span>
+                    </div>
+
+                    <div className="mt-5 grid grid-cols-3 gap-2 text-xs text-stone-500">
+                      <div className="rounded-xl border border-white/10 p-3">
+                        <p>Всего голосов</p>
+                        <p className="mt-1 text-lg font-semibold text-white">
+                          {selectedRoundStats.totalRatings}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 p-3">
+                        <p>Валидных</p>
+                        <p className="mt-1 text-lg font-semibold text-white">
+                          {selectedRoundStats.validVotesCount}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-white/10 p-3">
+                        <p>Выбросов</p>
+                        <p className="mt-1 text-lg font-semibold text-white">
+                          {selectedRoundStats.outliersRemovedCount}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <CriteriaBars
+                        criteria={selectedRoundStats.criteriaMeans}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-stone-950/60 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-stone-300">
+                        Органолептический профиль
+                      </p>
+                      <Radio
+                        className="h-4 w-4 text-wine-300"
+                        aria-hidden="true"
+                      />
+                    </div>
+                    <RadarProfileChart
+                      profile={selectedRoundStats.radarProfile}
+                      height={280}
+                      compact
+                    />
+                  </div>
+
+                  {selectedRoundStats.aromaTagFrequency.length > 0 ? (
+                    <div className="rounded-2xl border border-white/10 bg-stone-950/60 p-5">
+                      <p className="text-sm font-medium text-stone-300">
+                        Частые ароматические дескрипторы
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedRoundStats.aromaTagFrequency
+                          .slice(0, 12)
+                          .map((entry) => (
+                            <span
+                              key={entry.tag}
+                              className="rounded-full border border-wine-400/20 bg-wine-500/10 px-3 py-1.5 text-sm text-wine-100"
+                            >
+                              {entry.tag}
+                              <span className="ml-2 text-xs text-wine-300/70">
+                                {entry.count}
+                              </span>
+                            </span>
+                          ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : statsLoading ? (
+                <div className="flex min-h-24 items-center justify-center gap-2 rounded-2xl border border-white/10 text-sm text-stone-400">
+                  <Loader2
+                    className="h-4 w-4 animate-spin"
+                    aria-hidden="true"
+                  />
+                  Загружаем статистику раунда…
+                </div>
+              ) : (
+                <p className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-stone-500">
+                  Статистика пока недоступна
+                </p>
+              )}
             </div>
-            <div className="ml-auto text-right text-xs text-stone-500">
-              <p>
-                {selectedRound?.durationSeconds ?? 0} сек
-              </p>
-              <p className="mt-1">
-                {counts.votedCount} из {counts.connectedCount}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
-              style={{ width: `${votingProgress}%` }}
-            />
-          </div>
-
-          <div className="mt-5 grid gap-2 sm:grid-cols-3">
-            <button
-              type="button"
-              data-testid="control-start-round"
-              onClick={handleStartRound}
-              disabled={!canStart}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {pendingAction === 'start' ? (
-                <Loader2
-                  className="h-4 w-4 animate-spin"
+          ) : (
+            <>
+              <div className="mt-5 flex items-center gap-4 rounded-2xl border border-white/10 bg-stone-950/60 p-4">
+                <Clock3
+                  className="h-6 w-6 shrink-0 text-wine-300"
                   aria-hidden="true"
                 />
-              ) : (
-                <Play className="h-4 w-4" aria-hidden="true" />
-              )}
-              Запустить раунд
-            </button>
-            <button
-              type="button"
-              data-testid="control-lock-voting"
-              onClick={handleLockVoting}
-              disabled={!canLock}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {pendingAction === 'lock' ? (
-                <Loader2
-                  className="h-4 w-4 animate-spin"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Lock className="h-4 w-4" aria-hidden="true" />
-              )}
-              Остановить голосование
-            </button>
-            <button
-              type="button"
-              data-testid="control-reveal-bottle"
-              onClick={handleRevealBottle}
-              disabled={!canReveal}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-4 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {pendingAction === 'reveal' ? (
-                <Loader2
-                  className="h-4 w-4 animate-spin"
-                  aria-hidden="true"
-                />
-              ) : (
-                <Eye className="h-4 w-4" aria-hidden="true" />
-              )}
-              Раскрыть карту
-            </button>
-          </div>
-
-          {lastReveal ? (
-            <div className="mt-5 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
-              <div className="flex items-start gap-3">
-                <CheckCircle2
-                  className="mt-0.5 h-5 w-5 shrink-0 text-sky-300"
-                  aria-hidden="true"
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-sky-100">
-                    {lastReveal.wine.name}
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                    Таймер раунда
                   </p>
-                  <p className="mt-1 text-xs text-sky-200/70">
-                    {lastReveal.stats.meanScore !== null
-                      ? `${lastReveal.stats.meanScore.toLocaleString('ru-RU', {
-                          maximumFractionDigits: 1,
-                        })} балла · ${
-                          lastReveal.stats.qualityLabel ??
-                          'без категории'
-                        }`
-                      : 'Статистика пока недоступна'}
+                  <p className="font-mono text-4xl font-semibold tracking-tight text-white">
+                    {formatCountdown(remainingSeconds)}
+                  </p>
+                </div>
+                <div className="ml-auto text-right text-xs text-stone-500">
+                  <p>
+                    {selectedRound?.durationSeconds ?? 0} сек
+                  </p>
+                  <p className="mt-1">
+                    {counts.votedCount} из {counts.connectedCount}
                   </p>
                 </div>
               </div>
-            </div>
-          ) : null}
+
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
+                  style={{ width: `${votingProgress}%` }}
+                />
+              </div>
+
+              <div className="mt-5 grid gap-2 sm:grid-cols-3">
+                <button
+                  type="button"
+                  data-testid="control-start-round"
+                  onClick={handleStartRound}
+                  disabled={!canStart}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pendingAction === 'start' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Play className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Запустить раунд
+                </button>
+                <button
+                  type="button"
+                  data-testid="control-lock-voting"
+                  onClick={handleLockVoting}
+                  disabled={!canLock}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pendingAction === 'lock' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Lock className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Остановить голосование
+                </button>
+                <button
+                  type="button"
+                  data-testid="control-reveal-bottle"
+                  onClick={handleRevealBottle}
+                  disabled={!canReveal}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-4 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {pendingAction === 'reveal' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Eye className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Раскрыть карту
+                </button>
+              </div>
+
+              {lastReveal ? (
+                <div className="mt-5 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-4">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle2
+                      className="mt-0.5 h-5 w-5 shrink-0 text-sky-300"
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-sky-100">
+                        {lastReveal.wine.name}
+                      </p>
+                      <p className="mt-1 text-xs text-sky-200/70">
+                        {lastReveal.stats.meanScore !== null
+                          ? `${lastReveal.stats.meanScore.toLocaleString(
+                              'ru-RU',
+                              { maximumFractionDigits: 1 },
+                            )} балла · ${
+                              lastReveal.stats.qualityLabel ??
+                              'без категории'
+                            }`
+                          : 'Статистика пока недоступна'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          )}
         </section>
 
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
@@ -960,103 +1215,12 @@ export default function HostControlPage() {
         </div>
       </Modal>
 
-      <Modal
+      <ExportResultModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        title="Выгрузка в Народный рейтинг"
-        size="lg"
-        footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setExportOpen(false)}
-              className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
-            >
-              Закрыть
-            </button>
-            <button
-              type="button"
-              onClick={downloadExportPayload}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-stone-950 transition hover:bg-stone-200"
-            >
-              <Download className="h-4 w-4" aria-hidden="true" />
-              Скачать JSON
-            </button>
-          </div>
-        }
-      >
-        {exportResult ? (
-          <div data-testid="export-result" className="space-y-5">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex min-h-8 items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 text-xs font-medium text-emerald-200">
-                <CheckCircle2
-                  className="h-3.5 w-3.5"
-                  aria-hidden="true"
-                />
-                {exportResult.exportMeta.status === 'MOCK_SUCCESS'
-                  ? 'Принято имитационным приёмником'
-                  : 'Выгружено'}
-              </span>
-              <span className="text-xs text-stone-500">
-                {exportResult.exportMeta.simulationMode
-                  ? 'Демонстрационный режим'
-                  : 'Внешний приёмник'}
-              </span>
-            </div>
-
-            <dl className="grid gap-3 text-sm sm:grid-cols-2">
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <dt className="text-xs text-stone-500">Квитанция</dt>
-                <dd className="mt-1 break-all font-mono text-xs text-stone-200">
-                  {exportResult.exportMeta.mockReceiptId ??
-                    'Не возвращена'}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <dt className="text-xs text-stone-500">
-                  Адрес назначения
-                </dt>
-                <dd className="mt-1 break-all text-xs text-stone-200">
-                  {exportResult.exportMeta.targetEndpoint}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <dt className="text-xs text-stone-500">
-                  Валидных оценок
-                </dt>
-                <dd className="mt-1 font-semibold text-white">
-                  {exportResult.exportMeta.validVotesCount}
-                </dd>
-              </div>
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-                <dt className="text-xs text-stone-500">Выбросов</dt>
-                <dd className="mt-1 font-semibold text-white">
-                  {exportResult.exportMeta.rejectedOutliersCount}
-                </dd>
-              </div>
-            </dl>
-
-            <div>
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-stone-300">
-                  Пакет выгрузки
-                </p>
-                <span className="font-mono text-[11px] text-stone-600">
-                  {exportResult.dispatchedPayload.samples.length}{' '}
-                  обр.
-                </span>
-              </div>
-              <pre className="max-h-72 overflow-auto rounded-2xl border border-white/10 bg-stone-950 p-4 font-mono text-[11px] leading-5 text-stone-300">
-                {JSON.stringify(
-                  exportResult.dispatchedPayload,
-                  null,
-                  2,
-                )}
-              </pre>
-            </div>
-          </div>
-        ) : null}
-      </Modal>
+        result={exportResult}
+        eventId={eventId}
+      />
 
       <Toast
         message={toast?.message ?? null}

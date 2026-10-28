@@ -35,6 +35,7 @@ interface ActiveRoundTimer {
 export class RoomStateService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoomStateService.name);
   private readonly timers = new Map<string, ActiveRoundTimer>();
+  private readonly lastViewedRoundIds = new Map<string, string>();
 
   constructor(
     @InjectRepository(TastingRound)
@@ -175,6 +176,18 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  setLastViewedRound(eventId: string, roundId: string): void {
+    this.lastViewedRoundIds.set(eventId, roundId);
+  }
+
+  getLastViewedRound(eventId: string): string | null {
+    return this.lastViewedRoundIds.get(eventId) ?? null;
+  }
+
+  clearLastViewedRound(eventId: string): void {
+    this.lastViewedRoundIds.delete(eventId);
+  }
+
   getEndsAt(eventId: string, roundId: string): Date | null {
     return this.timers.get(this.timerKey(eventId, roundId))?.endsAt ?? null;
   }
@@ -201,6 +214,7 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.timers.clear();
+    this.lastViewedRoundIds.clear();
   }
 
   private async expireRound(key: string): Promise<void> {

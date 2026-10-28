@@ -80,7 +80,7 @@ function preferredLanIp(values: string[]): string | null {
 
 function configuredClientLanIp(): string | null {
   const candidates = [
-    process.env.NEXT_PUBLIC_HOST_IP,
+    normalizeConfiguredHostname(process.env.NEXT_PUBLIC_HOST_IP),
     normalizeConfiguredHostname(process.env.NEXT_PUBLIC_API_URL),
   ];
 

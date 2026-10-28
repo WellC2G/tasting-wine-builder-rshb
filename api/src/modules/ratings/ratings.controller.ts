@@ -53,7 +53,8 @@ export class RatingsController {
     summary: 'Отправить оценку образца',
     description:
       'Принимает оценку по шкале Паркера или 5-звёздочной шкале, ' +
-      'рассчитывает итоговый балл и категорию качества.',
+      'создаёт или обновляет оценку гостя, рассчитывает итоговый балл ' +
+      'и категорию качества.',
   })
   @ApiParam({
     name: 'roundId',
@@ -62,7 +63,7 @@ export class RatingsController {
   })
   @ApiResponse({
     status: 201,
-    description: 'Оценка сохранена',
+    description: 'Оценка создана или обновлена',
     type: RatingResponseDto,
   })
   @ApiResponse({ status: 400, description: 'Ошибка валидации данных' })
@@ -71,10 +72,6 @@ export class RatingsController {
     description: 'Требуется гостевой токен',
   })
   @ApiResponse({ status: 404, description: 'Раунд не найден' })
-  @ApiResponse({
-    status: 409,
-    description: 'Вы уже отправили оценку для этого образца',
-  })
   @ApiResponse({
     status: 423,
     description: 'Приём оценок по данному образцу закрыт',

@@ -19,6 +19,8 @@ export const TIMER_EXPIRED_MESSAGE =
 export const VOTING_CLOSED_BY_HOST_MESSAGE =
   'Голосование закрыто ведущим';
 export const BOTTLE_REVEALED_MESSAGE = 'Карточка образца раскрыта!';
+export const STATS_OPENED_MESSAGE =
+  'Статистика образца открыта сомелье';
 
 export function tastingRoom(eventId: string): string {
   return `${TASTING_ROOM_PREFIX}${eventId}`;

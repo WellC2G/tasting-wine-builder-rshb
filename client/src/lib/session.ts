@@ -1,6 +1,8 @@
 import type {
   HostUser,
+  Organoleptics,
   OsFamily,
+  ParkerBreakdown,
   RatingResponse,
 } from '@/types/api';
 
@@ -8,6 +10,7 @@ const HOST_TOKEN_KEY = 'tasting.host.token';
 const HOST_USER_KEY = 'tasting.host.user';
 const GUEST_SESSION_PREFIX = 'tasting.guest.';
 const RATING_PREFIX = 'tasting.rating.';
+const FORM_DRAFT_PREFIX = 'tasting.form.';
 const DEVICE_ID_STORAGE_KEY = 'tasting.device.id';
 const DEVICE_ID_COOKIE_NAME = 'tasting_device_id';
 const DEVICE_ID_PATTERN = /^[a-zA-Z0-9_-]{8,128}$/;
@@ -27,6 +30,43 @@ export interface HardwareProfile {
   timeZone: string;
   osFamily: OsFamily;
   maxTouchPoints: number;
+}
+
+export interface GuestRoundFormDraft {
+  parker: ParkerBreakdown;
+  organoleptics: Organoleptics;
+  stars: number;
+  selectedTags: string[];
+  notes: string;
+}
+
+const DEFAULT_GUEST_FORM_DRAFT: GuestRoundFormDraft = {
+  parker: {
+    appearance: 3,
+    aroma: 9,
+    taste: 12,
+    potential: 6,
+  },
+  organoleptics: {
+    sweetness: 5,
+    acidity: 5,
+    tannins: 5,
+    body: 5,
+    aromaIntensity: 5,
+  },
+  stars: 3,
+  selectedTags: [],
+  notes: '',
+};
+
+function cloneDefaultFormDraft(): GuestRoundFormDraft {
+  return {
+    parker: { ...DEFAULT_GUEST_FORM_DRAFT.parker },
+    organoleptics: { ...DEFAULT_GUEST_FORM_DRAFT.organoleptics },
+    stars: DEFAULT_GUEST_FORM_DRAFT.stars,
+    selectedTags: [],
+    notes: '',
+  };
 }
 
 function canUseStorage(): boolean {
@@ -345,4 +385,60 @@ export function setStoredRating(
   rating: RatingResponse,
 ): void {
   writeJson(`${RATING_PREFIX}${roundId}`, rating);
+}
+
+export function getStoredFormDraft(
+  roundId: string,
+): GuestRoundFormDraft | null {
+  const draft = readJson<GuestRoundFormDraft>(
+    `${FORM_DRAFT_PREFIX}${roundId}`,
+  );
+
+  if (
+    !draft ||
+    typeof draft !== 'object' ||
+    !draft.parker ||
+    !draft.organoleptics ||
+    typeof draft.stars !== 'number' ||
+    !Array.isArray(draft.selectedTags) ||
+    typeof draft.notes !== 'string'
+  ) {
+    return null;
+  }
+
+  return draft;
+}
+
+export function setStoredFormDraft(
+  roundId: string,
+  draft: GuestRoundFormDraft,
+): void {
+  writeJson(`${FORM_DRAFT_PREFIX}${roundId}`, draft);
+}
+
+export function restoreFormForRound(
+  roundId: string,
+): GuestRoundFormDraft {
+  const draft = getStoredFormDraft(roundId);
+
+  if (draft) {
+    return draft;
+  }
+
+  const rating = getStoredRating(roundId);
+
+  if (rating) {
+    const defaults = cloneDefaultFormDraft();
+
+    return {
+      parker: rating.parkerBreakdown ?? defaults.parker,
+      organoleptics:
+        rating.organoleptics ?? defaults.organoleptics,
+      stars: rating.stars ?? defaults.stars,
+      selectedTags: rating.aromaTags ?? [],
+      notes: rating.personalNotes ?? '',
+    };
+  }
+
+  return cloneDefaultFormDraft();
 }

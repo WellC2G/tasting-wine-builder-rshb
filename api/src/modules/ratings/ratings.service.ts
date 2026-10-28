@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   HttpException,
   Injectable,
@@ -32,8 +31,6 @@ import { ParkerScoreCalculator } from './services/parker-calculator.service';
 
 const VOTING_CLOSED_MESSAGE =
   'Приём оценок по данному образцу закрыт';
-const DUPLICATE_RATING_MESSAGE =
-  'Вы уже отправили оценку для этого образца';
 
 @Injectable()
 export class RatingsService {
@@ -77,10 +74,6 @@ export class RatingsService {
       participantId: participant.id,
     });
 
-    if (existingRating) {
-      throw new ConflictException(DUPLICATE_RATING_MESSAGE);
-    }
-
     const scaleType = round.event.scaleType;
     let totalScore: number;
     let appearanceScore: number | null = null;
@@ -114,24 +107,27 @@ export class RatingsService {
 
     const qualityCategory: ParkerQualityCategory =
       this.calculator.getQualityCategory(totalScore);
-    const rating = this.ratingsRepository.create({
-      roundId,
-      participantId: participant.id,
-      appearanceScore,
-      aromaScore,
-      tasteScore,
-      potentialScore,
-      totalScore,
-      qualityCategory,
-      sweetness: dto.organoleptics.sweetness,
-      acidity: dto.organoleptics.acidity,
-      tannins: dto.organoleptics.tannins,
-      body: dto.organoleptics.body,
-      aromaIntensity: dto.organoleptics.aromaIntensity,
-      aromaTags: dto.aromaTags ?? [],
-      personalNotes: dto.personalNotes ?? null,
-      isOutlier: false,
-    });
+    const rating =
+      existingRating ??
+      this.ratingsRepository.create({
+        roundId,
+        participantId: participant.id,
+      });
+
+    rating.appearanceScore = appearanceScore;
+    rating.aromaScore = aromaScore;
+    rating.tasteScore = tasteScore;
+    rating.potentialScore = potentialScore;
+    rating.totalScore = totalScore;
+    rating.qualityCategory = qualityCategory;
+    rating.sweetness = dto.organoleptics.sweetness;
+    rating.acidity = dto.organoleptics.acidity;
+    rating.tannins = dto.organoleptics.tannins;
+    rating.body = dto.organoleptics.body;
+    rating.aromaIntensity = dto.organoleptics.aromaIntensity;
+    rating.aromaTags = dto.aromaTags ?? [];
+    rating.personalNotes = dto.personalNotes ?? null;
+    rating.isOutlier = false;
 
     let savedRating: Rating;
 
@@ -139,12 +135,37 @@ export class RatingsService {
       savedRating = await this.ratingsRepository.save(rating);
     } catch (error) {
       if (
-        isUniqueViolation(error, 'uq_ratings_round_participant')
+        !isUniqueViolation(error, 'uq_ratings_round_participant')
       ) {
-        throw new ConflictException(DUPLICATE_RATING_MESSAGE);
+        throw error;
       }
 
-      throw error;
+      const concurrentRating =
+        await this.ratingsRepository.findOneBy({
+          roundId,
+          participantId: participant.id,
+        });
+
+      if (!concurrentRating) {
+        throw error;
+      }
+
+      concurrentRating.appearanceScore = appearanceScore;
+      concurrentRating.aromaScore = aromaScore;
+      concurrentRating.tasteScore = tasteScore;
+      concurrentRating.potentialScore = potentialScore;
+      concurrentRating.totalScore = totalScore;
+      concurrentRating.qualityCategory = qualityCategory;
+      concurrentRating.sweetness = dto.organoleptics.sweetness;
+      concurrentRating.acidity = dto.organoleptics.acidity;
+      concurrentRating.tannins = dto.organoleptics.tannins;
+      concurrentRating.body = dto.organoleptics.body;
+      concurrentRating.aromaIntensity =
+        dto.organoleptics.aromaIntensity;
+      concurrentRating.aromaTags = dto.aromaTags ?? [];
+      concurrentRating.personalNotes = dto.personalNotes ?? null;
+      concurrentRating.isOutlier = false;
+      savedRating = await this.ratingsRepository.save(concurrentRating);
     }
 
     const counter = await this.participantCounterService.getCounter(
@@ -171,6 +192,15 @@ export class RatingsService {
       qualityCategory,
       qualityLabel:
         this.calculator.getQualityLabel(qualityCategory),
+      organoleptics: {
+        sweetness: savedRating.sweetness,
+        acidity: savedRating.acidity,
+        tannins: savedRating.tannins,
+        body: savedRating.body,
+        aromaIntensity: savedRating.aromaIntensity,
+      },
+      aromaTags: savedRating.aromaTags,
+      personalNotes: savedRating.personalNotes,
     };
   }
 

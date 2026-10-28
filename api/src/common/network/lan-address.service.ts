@@ -55,6 +55,22 @@ function hostnameFromUrl(value: string | null): string | null {
   }
 }
 
+function configuredIpValue(
+  value: string | null | undefined,
+): string | null {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return null;
+  }
+
+  if (isIP(trimmed) === 4) {
+    return trimmed;
+  }
+
+  return hostnameFromUrl(trimmed);
+}
+
 function lanIpPriority(ip: string | null): number | null {
   if (!ip || isIP(ip) !== 4) {
     return null;
@@ -77,6 +93,21 @@ function lanIpPriority(ip: string | null): number | null {
   return null;
 }
 
+function isDockerGatewayIp(ip: string): boolean {
+  if (isIP(ip) !== 4) {
+    return false;
+  }
+
+  const [first, second, , fourth] = ip.split('.').map(Number);
+
+  return (
+    first === 172 &&
+    second >= 16 &&
+    second <= 31 &&
+    fourth === 1
+  );
+}
+
 function isVirtualInterface(name: string): boolean {
   return VIRTUAL_INTERFACE_PATTERN.test(name);
 }
@@ -88,10 +119,10 @@ export class LanAddressService {
 
   getLanIp(): string | null {
     return (
-      this.manualLanIp ??
       this.resolveConfiguredLanIp() ??
-      this.scanNetworkInterfaces() ??
-      this.observedLanIp
+      this.manualLanIp ??
+      this.observedLanIp ??
+      this.scanNetworkInterfaces()
     );
   }
 
@@ -130,12 +161,16 @@ export class LanAddressService {
 
   private resolveConfiguredLanIp(): string | null {
     const configured = [
-      process.env.HOST_LAN_IP,
-      process.env.NEXT_PUBLIC_HOST_IP,
+      configuredIpValue(process.env.HOST_LAN_IP),
+      configuredIpValue(process.env.NEXT_PUBLIC_HOST_IP),
       hostnameFromUrl(process.env.NEXT_PUBLIC_API_URL ?? null),
     ]
-      .map((value) => value?.trim() ?? '')
-      .filter((value) => lanIpPriority(value))
+      .filter(
+        (value): value is string =>
+          value !== null &&
+          Boolean(lanIpPriority(value)) &&
+          !isDockerGatewayIp(value),
+      )
       .sort(
         (left, right) =>
           (lanIpPriority(left) ?? Number.MAX_SAFE_INTEGER) -

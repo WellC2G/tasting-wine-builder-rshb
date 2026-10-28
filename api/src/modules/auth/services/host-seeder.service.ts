@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { hash } from 'bcryptjs';
+import { compare, hash } from 'bcryptjs';
 import { Repository } from 'typeorm';
 
 import { isUniqueViolation } from '../../../common/database/is-unique-violation';
@@ -19,6 +20,7 @@ export class HostSeederService implements OnApplicationBootstrap {
   constructor(
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
+    private readonly configService: ConfigService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -26,33 +28,64 @@ export class HostSeederService implements OnApplicationBootstrap {
   }
 
   async seedDemoHost(): Promise<void> {
+    const email =
+      this.configService.get<string>('HOST_EMAIL')?.trim() ||
+      DEMO_HOST_EMAIL;
+    const configuredPassword =
+      this.configService.get<string>('HOST_PASSWORD');
+    const password =
+      configuredPassword && configuredPassword.length > 0
+        ? configuredPassword
+        : DEMO_HOST_PASSWORD;
+    const name =
+      this.configService.get<string>('HOST_NAME')?.trim() ||
+      DEMO_HOST_NAME;
     const existingUser = await this.usersRepository.findOneBy({
-      email: DEMO_HOST_EMAIL,
+      email,
     });
 
     if (existingUser) {
-      this.logger.log(
-        `Demo host account already exists: ${DEMO_HOST_EMAIL}`,
-      );
+      let changed = false;
+
+      if (existingUser.name !== name) {
+        existingUser.name = name;
+        changed = true;
+      }
+
+      if (!(await compare(password, existingUser.passwordHash))) {
+        existingUser.passwordHash = await hash(
+          password,
+          BCRYPT_SALT_ROUNDS,
+        );
+        changed = true;
+      }
+
+      if (changed) {
+        await this.usersRepository.save(existingUser);
+        this.logger.log(`Host account updated: ${email}`);
+      } else {
+        this.logger.log(`Host account already exists: ${email}`);
+      }
+
       return;
     }
 
-    const passwordHash = await hash(DEMO_HOST_PASSWORD, BCRYPT_SALT_ROUNDS);
+    const passwordHash = await hash(password, BCRYPT_SALT_ROUNDS);
 
     try {
       await this.usersRepository.save(
         this.usersRepository.create({
-          email: DEMO_HOST_EMAIL,
+          email,
           passwordHash,
-          name: DEMO_HOST_NAME,
+          name,
           role: UserRole.HOST,
         }),
       );
-      this.logger.log(`Demo host account created: ${DEMO_HOST_EMAIL}`);
+      this.logger.log(`Host account created: ${email}`);
     } catch (error) {
       if (isUniqueViolation(error, 'uq_users_email')) {
         this.logger.log(
-          `Demo host account was created concurrently: ${DEMO_HOST_EMAIL}`,
+          `Host account was created concurrently: ${email}`,
         );
         return;
       }

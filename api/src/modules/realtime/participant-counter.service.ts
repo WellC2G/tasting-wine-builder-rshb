@@ -37,7 +37,12 @@ export class ParticipantCounterService {
         })
       : 0;
 
-    return { connectedCount, votedCount };
+    return {
+      eventId,
+      roundId: targetRoundId ?? null,
+      connectedCount,
+      votedCount,
+    };
   }
 
   private async findCurrentRoundId(

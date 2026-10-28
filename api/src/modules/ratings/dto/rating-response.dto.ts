@@ -2,6 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 
 import { ScaleType } from '../../events/entities/tasting-event.entity';
 import { ParkerQualityCategory } from '../enums/parker-quality-category.enum';
+import { OrganolepticsDto } from './organoleptics.dto';
 import { ParkerBreakdownDto } from './parker-breakdown.dto';
 
 export class RatingResponseDto {
@@ -55,4 +56,25 @@ export class RatingResponseDto {
     description: 'Локализованное название категории качества',
   })
   qualityLabel!: string;
+
+  @ApiProperty({
+    type: OrganolepticsDto,
+    description: 'Сохранённый органолептический профиль',
+  })
+  organoleptics!: OrganolepticsDto;
+
+  @ApiProperty({
+    type: [String],
+    example: ['вишня', 'перец'],
+    description: 'Сохранённые ароматические дескрипторы',
+  })
+  aromaTags!: string[];
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: 'Длительное пряное послевкусие',
+    description: 'Личные заметки гостя',
+  })
+  personalNotes!: string | null;
 }

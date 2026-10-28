@@ -9,7 +9,6 @@ import {
   EyeOff,
   Loader2,
   LogIn,
-  Sparkles,
   Wine,
 } from 'lucide-react';
 
@@ -19,13 +18,10 @@ import {
 } from '@/lib/api-client';
 import { getHostToken, setHostSession } from '@/lib/session';
 
-const DEMO_EMAIL = 'sommelier@tasting.ru';
-const DEMO_PASSWORD = 'Sommelier2026!';
-
 export default function HostLoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState(DEMO_EMAIL);
-  const [password, setPassword] = useState(DEMO_PASSWORD);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,12 +48,6 @@ export default function HostLoginPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const fillDemoCredentials = () => {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
-    setError(null);
   };
 
   return (
@@ -175,32 +165,6 @@ export default function HostLoginPage() {
               {submitting ? 'Входим…' : 'Войти'}
             </button>
           </form>
-
-          <div className="mt-6 rounded-2xl border border-wine-400/20 bg-wine-950/30 p-4">
-            <div className="flex items-start gap-3">
-              <Sparkles
-                className="mt-0.5 h-4 w-4 shrink-0 text-wine-300"
-                aria-hidden="true"
-              />
-              <div className="text-sm text-stone-300">
-                <p className="font-medium text-wine-200">
-                  Демонстрационный доступ
-                </p>
-                <p className="mt-1 font-mono text-xs text-stone-400">
-                  {DEMO_EMAIL}
-                  <br />
-                  {DEMO_PASSWORD}
-                </p>
-                <button
-                  type="button"
-                  onClick={fillDemoCredentials}
-                  className="mt-3 inline-flex min-h-10 items-center rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5"
-                >
-                  Подставить демо-доступ
-                </button>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </main>

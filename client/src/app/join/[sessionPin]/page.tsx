@@ -55,8 +55,11 @@ import {
   getNormalizedScreenResolution,
   getOrCreateDeviceId,
   getStoredRating,
+  restoreFormForRound,
   setGuestSession,
+  setStoredFormDraft,
   setStoredRating,
+  type GuestRoundFormDraft,
 } from '@/lib/session';
 import type {
   CreateRatingInput,
@@ -193,23 +196,39 @@ export default function GuestJoinPage() {
     connectCount,
   } = useTastingSocket(guestToken);
 
-  const resetForm = () => {
-    setParker({
-      appearance: 3,
-      aroma: 9,
-      taste: 12,
-      potential: 6,
+  useEffect(() => {
+    const roundId = currentRound?.roundId;
+
+    if (
+      !roundId ||
+      (phase !== 'voting' && phase !== 'submitted')
+    ) {
+      return;
+    }
+
+    setStoredFormDraft(roundId, {
+      parker,
+      organoleptics,
+      stars,
+      selectedTags,
+      notes,
     });
-    setOrganoleptics({
-      sweetness: 5,
-      acidity: 5,
-      tannins: 5,
-      body: 5,
-      aromaIntensity: 5,
-    });
-    setStars(3);
-    setSelectedTags([]);
-    setNotes('');
+  }, [
+    currentRound?.roundId,
+    phase,
+    parker,
+    organoleptics,
+    stars,
+    selectedTags,
+    notes,
+  ]);
+
+  const applyFormDraft = (draft: GuestRoundFormDraft): void => {
+    setParker(draft.parker);
+    setOrganoleptics(draft.organoleptics);
+    setStars(draft.stars);
+    setSelectedTags(draft.selectedTags);
+    setNotes(draft.notes);
     setSubmitError(null);
   };
 
@@ -256,6 +275,7 @@ export default function GuestJoinPage() {
       if (round.wine) {
         setWine(round.wine);
       }
+      applyFormDraft(restoreFormForRound(round.roundId));
       setPhase(savedRating ? 'submitted' : 'voting');
       return;
     }
@@ -387,10 +407,10 @@ export default function GuestJoinPage() {
       setWine(payload.wine ?? null);
       setStats(null);
       setSubmitError(null);
-      resetForm();
       const savedRating = getStoredRating(payload.roundId);
       setOwnRating(savedRating);
-      setPhase(savedRating ? 'submitted' : 'voting');
+      applyFormDraft(restoreFormForRound(payload.roundId));
+      setPhase('voting');
       setToast({
         message: 'Сомелье запустил новый раунд',
         tone: 'info',
@@ -412,11 +432,19 @@ export default function GuestJoinPage() {
     const handleBottleRevealed = (
       payload: BottleRevealedPayload,
     ) => {
-      setCurrentRound((round) =>
-        round && round.roundId === payload.roundId
-          ? { ...round, status: 'REVEALED' }
-          : round,
-      );
+      setCurrentRound((round) => ({
+        roundId: payload.roundId,
+        orderNumber:
+          payload.orderNumber ?? round?.orderNumber ?? 0,
+        blindLabel:
+          payload.blindLabel ??
+          round?.blindLabel ??
+          'Раскрытый образец',
+        status: 'REVEALED',
+        durationSeconds: round?.durationSeconds ?? 0,
+        remainingSeconds: 0,
+        wine: payload.wine,
+      }));
       setWine(payload.wine);
       setStats(payload.stats);
       setOwnRating(getStoredRating(payload.roundId));
@@ -520,6 +548,14 @@ export default function GuestJoinPage() {
     } else {
       payload.parkerBreakdown = parker;
     }
+
+    setStoredFormDraft(currentRound.roundId, {
+      parker,
+      organoleptics,
+      stars,
+      selectedTags,
+      notes,
+    });
 
     try {
       const response = await apiClient.ratings.submit(
@@ -812,6 +848,27 @@ export default function GuestJoinPage() {
                   {ownRating.qualityLabel}
                 </p>
               </div>
+            ) : null}
+
+            {phase === 'submitted' &&
+            currentRound?.status === 'ACTIVE' ? (
+              <button
+                type="button"
+                data-testid="guest-edit-rating"
+                onClick={() => {
+                  if (!currentRound) {
+                    return;
+                  }
+
+                  applyFormDraft(
+                    restoreFormForRound(currentRound.roundId),
+                  );
+                  setPhase('voting');
+                }}
+                className="mx-auto mt-5 inline-flex min-h-12 items-center justify-center rounded-xl border border-wine-400/30 bg-wine-500/10 px-5 text-sm font-semibold text-wine-100 transition hover:bg-wine-500/20"
+              >
+                Изменить оценку
+              </button>
             ) : null}
 
             {submitError ? (

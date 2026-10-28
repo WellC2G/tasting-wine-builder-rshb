@@ -1,7 +1,8 @@
 'use client';
 
-import { Grape, MapPin, Wine as WineIcon } from 'lucide-react';
+import { Grape, MapPin } from 'lucide-react';
 
+import { WineImage } from '@/components/wine-image';
 import { cn } from '@/lib/cn';
 import { WINE_TYPE_LABELS, formatPrice } from '@/lib/format';
 import type { RevealedWine } from '@/types/api';
@@ -32,14 +33,14 @@ export function WineDetailsCard({
       >
         <div
           className={cn(
-            'flex shrink-0 items-center justify-center rounded-2xl border border-wine-400/20 bg-wine-500/10 text-wine-300',
+            'flex shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-wine-400/20 bg-wine-500/10 text-wine-300',
             large ? 'h-36 w-full sm:h-44 sm:w-44' : 'h-24 w-24',
           )}
         >
-          <WineIcon
-            className={large ? 'h-16 w-16' : 'h-10 w-10'}
-            strokeWidth={1.2}
-            aria-hidden="true"
+          <WineImage
+            src={wine.imageUrl}
+            alt={wine.name}
+            iconClassName={large ? 'h-16 w-16' : 'h-10 w-10'}
           />
         </div>
         <div className="min-w-0 flex-1">

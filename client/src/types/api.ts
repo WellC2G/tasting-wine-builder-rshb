@@ -5,7 +5,8 @@ export type RoundStatus =
   | 'PENDING'
   | 'ACTIVE'
   | 'VOTING_CLOSED'
-  | 'REVEALED';
+  | 'REVEALED'
+  | 'SKIPPED';
 export type WineType =
   | 'RED'
   | 'WHITE'
@@ -71,6 +72,17 @@ export interface PaginatedWines {
     total: number;
     totalPages: number;
   };
+}
+
+export interface WineInput {
+  name: string;
+  winery: string;
+  region: string;
+  grapeVarieties: string;
+  vintage: number;
+  wineType: WineType;
+  retailPrice: number;
+  imageUrl?: string | null;
 }
 
 export interface RevealedWine {

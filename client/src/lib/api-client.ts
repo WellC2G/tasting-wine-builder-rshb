@@ -16,6 +16,8 @@ import type {
   PaginatedWines,
   RatingResponse,
   RoundStats,
+  Wine,
+  WineInput,
   WineType,
 } from '@/types/api';
 
@@ -305,6 +307,20 @@ export const apiClient = {
       return request<PaginatedWines>(
         `/api/v1/wines?${catalogQuery(filters)}`,
       );
+    },
+
+    create(input: WineInput): Promise<Wine> {
+      return request<Wine>('/api/v1/wines', {
+        method: 'POST',
+        body: input,
+      });
+    },
+
+    update(id: string, input: Partial<WineInput>): Promise<Wine> {
+      return request<Wine>(`/api/v1/wines/${id}`, {
+        method: 'PATCH',
+        body: input,
+      });
     },
   },
 

@@ -12,6 +12,7 @@ import {
   Loader2,
   LogOut,
   Monitor,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -24,6 +25,8 @@ import {
 
 import { ExportResultModal } from '@/components/export-result-modal';
 import { Modal } from '@/components/modal';
+import { WineFormModal } from '@/components/wine-form-modal';
+import { WineImage } from '@/components/wine-image';
 import { PageLoader } from '@/components/page-loader';
 import { Toast } from '@/components/toast';
 import { useHostSession } from '@/hooks/use-host-session';
@@ -81,6 +84,9 @@ export default function HostEventsPage() {
   const [winesLoading, setWinesLoading] = useState(false);
   const [winesError, setWinesError] = useState<string | null>(null);
   const [wineSearch, setWineSearch] = useState('');
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [wineModalOpen, setWineModalOpen] = useState(false);
+  const [editingWine, setEditingWine] = useState<Wine | null>(null);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
@@ -139,8 +145,43 @@ export default function HostEventsPage() {
     setCreateOpen(true);
   };
 
+  const openCatalogModal = () => {
+    setWineSearch('');
+    setCatalogOpen(true);
+  };
+
+  const openAddWine = () => {
+    setEditingWine(null);
+    setWineModalOpen(true);
+  };
+
+  const openEditWine = (wine: Wine) => {
+    setEditingWine(wine);
+    setWineModalOpen(true);
+  };
+
+  const handleWineSaved = (savedWine: Wine) => {
+    setWines((current) => {
+      const exists = current.some((wine) => wine.id === savedWine.id);
+
+      return exists
+        ? current.map((wine) =>
+            wine.id === savedWine.id ? savedWine : wine,
+          )
+        : [...current, savedWine];
+    });
+    setRounds((current) =>
+      current.map((round) =>
+        round.wine.id === savedWine.id
+          ? { ...round, wine: savedWine }
+          : round,
+      ),
+    );
+    setToast('Каталог вин обновлён');
+  };
+
   useEffect(() => {
-    if (!createOpen || wines.length > 0) {
+    if ((!createOpen && !catalogOpen) || wines.length > 0) {
       return;
     }
 
@@ -169,7 +210,7 @@ export default function HostEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [createOpen, wines.length]);
+  }, [createOpen, catalogOpen, wines.length]);
 
   const filteredWines = useMemo(() => {
     const query = wineSearch.trim().toLocaleLowerCase('ru-RU');
@@ -407,6 +448,15 @@ export default function HostEventsPage() {
             </button>
             <button
               type="button"
+              data-testid="catalog-open"
+              onClick={openCatalogModal}
+              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+            >
+              <WineIcon className="h-4 w-4" aria-hidden="true" />
+              Каталог вин
+            </button>
+            <button
+              type="button"
               data-testid="create-event-open"
               onClick={openCreateModal}
               className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500"
@@ -641,9 +691,19 @@ export default function HostEventsPage() {
                   Добавьте вина из каталога и задайте порядок подачи.
                 </p>
               </div>
-              <span className="text-xs text-stone-500">
-                {rounds.length} в программе
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-stone-500">
+                  {rounds.length} в программе
+                </span>
+                <button
+                  type="button"
+                  onClick={openAddWine}
+                  className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-wine-400/25 bg-wine-500/10 px-3 text-xs font-medium text-wine-100 transition hover:bg-wine-500/20"
+                >
+                  <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                  Добавить вино
+                </button>
+              </div>
             </div>
 
             <div className="relative">
@@ -683,53 +743,66 @@ export default function HostEventsPage() {
                   const selected = selectedWineIds.has(wine.id);
 
                   return (
-                    <button
+                    <div
                       key={wine.id}
-                      type="button"
-                      data-testid="wine-option"
-                      disabled={selected}
-                      onClick={() => addWine(wine)}
-                      className={cn(
-                        'flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition',
-                        selected
-                          ? 'cursor-not-allowed opacity-40'
-                          : 'hover:bg-white/[0.06]',
-                      )}
+                      className="flex items-center gap-1 rounded-xl px-1 py-1 transition hover:bg-white/[0.04]"
                     >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-wine-500/10 text-wine-300">
-                        <WineIcon
-                          className="h-5 w-5"
-                          aria-hidden="true"
-                        />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-white">
-                          {wine.name}
+                      <button
+                        type="button"
+                        data-testid="wine-option"
+                        disabled={selected}
+                        onClick={() => addWine(wine)}
+                        className={cn(
+                          'flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-lg px-2 py-2 text-left transition',
+                          selected
+                            ? 'cursor-not-allowed opacity-40'
+                            : 'hover:bg-white/[0.06]',
+                        )}
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-white/5 bg-wine-500/10 text-wine-300">
+                          <WineImage
+                            src={wine.imageUrl}
+                            alt={wine.name}
+                            iconClassName="h-5 w-5"
+                          />
                         </span>
-                        <span className="mt-0.5 block truncate text-xs text-stone-500">
-                          {wine.winery} · {wine.region} ·{' '}
-                          {wine.vintage}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-white">
+                            {wine.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs text-stone-500">
+                            {wine.winery} · {wine.region} ·{' '}
+                            {wine.vintage}
+                          </span>
                         </span>
-                      </span>
-                      <span className="shrink-0 text-right">
-                        <span className="block text-xs text-stone-400">
-                          {WINE_TYPE_LABELS[wine.wineType]}
+                        <span className="shrink-0 text-right">
+                          <span className="block text-xs text-stone-400">
+                            {WINE_TYPE_LABELS[wine.wineType]}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-stone-500">
+                            {formatPrice(wine.retailPrice)}
+                          </span>
                         </span>
-                        <span className="mt-0.5 block text-xs text-stone-500">
-                          {formatPrice(wine.retailPrice)}
-                        </span>
-                      </span>
-                      {selected ? (
-                        <span className="text-xs text-wine-300">
-                          Добавлено
-                        </span>
-                      ) : (
-                        <Plus
-                          className="h-4 w-4 shrink-0 text-wine-300"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </button>
+                        {selected ? (
+                          <span className="text-xs text-wine-300">
+                            Добавлено
+                          </span>
+                        ) : (
+                          <Plus
+                            className="h-4 w-4 shrink-0 text-wine-300"
+                            aria-hidden="true"
+                          />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openEditWine(wine)}
+                        aria-label={`Редактировать ${wine.name}`}
+                        className="flex h-12 w-10 shrink-0 items-center justify-center rounded-lg text-stone-500 transition hover:bg-white/5 hover:text-wine-200"
+                      >
+                        <Pencil className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    </div>
                   );
                 })
               )}
@@ -884,6 +957,97 @@ export default function HostEventsPage() {
           </div>
         </form>
       </Modal>
+
+      <Modal
+        open={catalogOpen}
+        onClose={() => setCatalogOpen(false)}
+        title="Каталог вин"
+        size="lg"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500"
+                aria-hidden="true"
+              />
+              <input
+                value={wineSearch}
+                onChange={(event) => setWineSearch(event.target.value)}
+                placeholder="Найти вино или винодельню"
+                className="min-h-12 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-11 pr-4 text-sm text-white outline-none placeholder:text-stone-500 focus:border-wine-400/60"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={openAddWine}
+              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-4 text-sm font-semibold text-white transition hover:bg-wine-500"
+            >
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Добавить вино
+            </button>
+          </div>
+
+          {winesError ? (
+            <p className="text-sm text-rose-300">{winesError}</p>
+          ) : null}
+
+          <div className="max-h-[65vh] space-y-2 overflow-y-auto pr-1">
+            {winesLoading ? (
+              <div className="flex min-h-28 items-center justify-center gap-2 text-sm text-stone-400">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                Загружаем каталог…
+              </div>
+            ) : filteredWines.length === 0 ? (
+              <p className="px-3 py-8 text-center text-sm text-stone-500">
+                Вина не найдены
+              </p>
+            ) : (
+              filteredWines.map((wine) => (
+                <div
+                  key={wine.id}
+                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3"
+                >
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/5 bg-wine-500/10 text-wine-300">
+                    <WineImage
+                      src={wine.imageUrl}
+                      alt={wine.name}
+                      iconClassName="h-6 w-6"
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-white">
+                      {wine.name}
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-stone-500">
+                      {wine.winery} · {wine.region} · {wine.vintage}
+                    </p>
+                    <p className="mt-1 text-xs text-stone-400">
+                      {WINE_TYPE_LABELS[wine.wineType]} ·{' '}
+                      {formatPrice(wine.retailPrice)}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openEditWine(wine)}
+                    className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/10 px-3 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+                  >
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
+                    Редактировать
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      <WineFormModal
+        open={wineModalOpen}
+        wine={editingWine}
+        onClose={() => setWineModalOpen(false)}
+        onSaved={handleWineSaved}
+      />
 
       <ExportResultModal
         open={exportOpen}

@@ -20,6 +20,7 @@ export const ROUND_STATUS_LABELS: Record<RoundStatus, string> = {
   ACTIVE: 'Идёт',
   VOTING_CLOSED: 'Голосование закрыто',
   REVEALED: 'Раскрыт',
+  SKIPPED: 'Пропущен',
 };
 
 export const MODE_LABELS: Record<TastingMode, string> = {
@@ -137,6 +138,8 @@ export function roundStatusTone(status: RoundStatus): string {
       return 'border-amber-400/30 bg-amber-400/10 text-amber-200';
     case 'REVEALED':
       return 'border-sky-400/30 bg-sky-400/10 text-sky-200';
+    case 'SKIPPED':
+      return 'border-stone-500/30 bg-stone-500/10 text-stone-400';
   }
 }
 

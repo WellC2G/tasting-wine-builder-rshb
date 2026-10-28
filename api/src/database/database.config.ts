@@ -13,6 +13,7 @@ import { EventsAuthSchema1792945874561 } from './migrations/1792945874561-Events
 import { RatingsSchema1792950279937 } from './migrations/1792950279937-RatingsSchema';
 import { ExportLogsSchema1792951008275 } from './migrations/1792951008275-ExportLogsSchema';
 import { ParticipantNetworkIdentity1793140634953 } from './migrations/1793140634953-ParticipantNetworkIdentity';
+import { WineCatalogUpdates1793226948059 } from './migrations/1793226948059-WineCatalogUpdates';
 
 const DEFAULT_POSTGRES_HOST = 'localhost';
 const DEFAULT_POSTGRES_PORT = 5432;
@@ -55,6 +56,7 @@ export function buildTypeOrmOptions(
       RatingsSchema1792950279937,
       ExportLogsSchema1792951008275,
       ParticipantNetworkIdentity1793140634953,
+      WineCatalogUpdates1793226948059,
     ],
     migrationsRun: true,
     synchronize: false,

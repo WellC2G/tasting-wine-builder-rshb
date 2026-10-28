@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import {
   ConflictException,
   Injectable,
@@ -9,6 +11,7 @@ import { Repository } from 'typeorm';
 
 import { isUniqueViolation } from '../../common/database/is-unique-violation';
 import { CreateWineDto } from './dto/create-wine.dto';
+import { UpdateWineDto } from './dto/update-wine.dto';
 import { ListWinesQueryDto } from './dto/list-wines-query.dto';
 import { PaginatedWinesResponseDto } from './dto/paginated-wines-response.dto';
 import { WineResponseDto } from './dto/wine-response.dto';
@@ -86,8 +89,10 @@ export class CatalogService {
   }
 
   async create(dto: CreateWineDto): Promise<WineResponseDto> {
+    const externalCatalogId =
+      dto.externalCatalogId ?? this.generateExternalCatalogId();
     const wine = this.winesRepository.create({
-      externalCatalogId: dto.externalCatalogId,
+      externalCatalogId,
       name: dto.name,
       winery: dto.winery,
       region: dto.region,
@@ -112,11 +117,48 @@ export class CatalogService {
         )
       ) {
         throw new ConflictException(
-          `Вино с внешним идентификатором "${dto.externalCatalogId}" уже существует`,
+          `Вино с внешним идентификатором "${externalCatalogId}" уже существует`,
         );
       }
 
       throw error;
     }
+  }
+
+  async update(
+    id: string,
+    dto: UpdateWineDto,
+  ): Promise<WineResponseDto> {
+    const wine = await this.winesRepository.findOneBy({ id });
+
+    if (!wine) {
+      throw new NotFoundException(
+        `Вино с идентификатором "${id}" не найдено`,
+      );
+    }
+
+    if (dto.name !== undefined) wine.name = dto.name;
+    if (dto.winery !== undefined) wine.winery = dto.winery;
+    if (dto.region !== undefined) wine.region = dto.region;
+    if (dto.grapeVarieties !== undefined) {
+      wine.grapeVarieties = dto.grapeVarieties;
+    }
+    if (dto.vintage !== undefined) wine.vintage = dto.vintage;
+    if (dto.wineType !== undefined) wine.wineType = dto.wineType;
+    if (dto.retailPrice !== undefined) {
+      wine.retailPrice = dto.retailPrice;
+    }
+    if (dto.imageUrl !== undefined) {
+      wine.imageUrl = dto.imageUrl;
+    }
+
+    const savedWine = await this.winesRepository.save(wine);
+    this.logger.log(`Updated wine ${savedWine.id}`);
+
+    return WineResponseDto.fromEntity(savedWine);
+  }
+
+  private generateExternalCatalogId(): string {
+    return `wine-${Date.now()}-${randomBytes(3).toString('hex')}`;
   }
 }

@@ -5,15 +5,25 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CatalogService } from './catalog.service';
 import { CreateWineDto } from './dto/create-wine.dto';
 import { ListWinesQueryDto } from './dto/list-wines-query.dto';
 import { PaginatedWinesResponseDto } from './dto/paginated-wines-response.dto';
+import { UpdateWineDto } from './dto/update-wine.dto';
 import { WineResponseDto } from './dto/wine-response.dto';
 
 const wineIdPipe = new ParseUUIDPipe({
@@ -74,10 +84,13 @@ export class CatalogController {
   }
 
   @Post()
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('host-jwt')
   @ApiOperation({
     summary: 'Добавить вино в каталог',
     description:
-      'Создаёт запись каталога. Внешний идентификатор вина должен быть уникальным.',
+      'Создаёт запись каталога. Если внешний идентификатор не передан, ' +
+      'он генерируется автоматически.',
   })
   @ApiResponse({
     status: 201,
@@ -89,7 +102,37 @@ export class CatalogController {
     status: 409,
     description: 'Вино с таким внешним идентификатором уже существует',
   })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
   create(@Body() dto: CreateWineDto): Promise<WineResponseDto> {
     return this.catalogService.create(dto);
+  }
+
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('host-jwt')
+  @ApiOperation({
+    summary: 'Редактировать вино',
+    description:
+      'Обновляет поля вина и изображение. Передайте imageUrl: null, ' +
+      'чтобы удалить фотографию.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор вина',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Вино обновлено',
+    type: WineResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Ошибка валидации данных' })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Вино не найдено' })
+  update(
+    @Param('id', wineIdPipe) id: string,
+    @Body() dto: UpdateWineDto,
+  ): Promise<WineResponseDto> {
+    return this.catalogService.update(id, dto);
   }
 }

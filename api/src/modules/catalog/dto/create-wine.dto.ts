@@ -29,15 +29,16 @@ const trimOptionalString = ({ value }: TransformFnParams): unknown => {
 };
 
 export class CreateWineDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Стабильный внешний идентификатор вина для экспорта. Строчный slug.',
+      'Стабильный внешний идентификатор вина для экспорта. Если не указан, ' +
+      'генерируется автоматически.',
     example: 'ru-wine-krasnostop-zolotovsky-2022',
     maxLength: 120,
   })
+  @IsOptional()
   @Transform(trimString)
   @IsString({ message: 'Идентификатор каталога должен быть строкой' })
-  @IsNotEmpty({ message: 'Укажите идентификатор каталога' })
   @MaxLength(120, {
     message: 'Идентификатор каталога не должен превышать 120 символов',
   })
@@ -45,7 +46,7 @@ export class CreateWineDto {
     message:
       'Идентификатор каталога должен состоять из строчных латинских букв, цифр и одиночных дефисов',
   })
-  externalCatalogId!: string;
+  externalCatalogId?: string;
 
   @ApiProperty({
     description: 'Название вина',
@@ -144,16 +145,18 @@ export class CreateWineDto {
   retailPrice!: number;
 
   @ApiPropertyOptional({
-    description: 'Ссылка на изображение вина',
+    description:
+      'Ссылка на изображение или data URL. Допускается до 2 500 000 символов.',
     example: 'https://example.com/wines/krasnostop.jpg',
-    maxLength: 500,
+    maxLength: 2_500_000,
     nullable: true,
   })
   @Transform(trimOptionalString)
   @IsOptional()
   @IsString({ message: 'Ссылка на изображение должна быть строкой' })
-  @MaxLength(500, {
-    message: 'Ссылка на изображение не должна превышать 500 символов',
+  @MaxLength(2_500_000, {
+    message:
+      'Ссылка на изображение не должна превышать 2 500 000 символов',
   })
-  imageUrl?: string;
+  imageUrl?: string | null;
 }

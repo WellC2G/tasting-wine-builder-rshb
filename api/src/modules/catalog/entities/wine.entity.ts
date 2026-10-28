@@ -77,7 +77,7 @@ export class Wine {
   })
   retailPrice!: number;
 
-  @Column({ name: 'image_url', type: 'varchar', length: 500, nullable: true })
+  @Column({ name: 'image_url', type: 'text', nullable: true })
   imageUrl!: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

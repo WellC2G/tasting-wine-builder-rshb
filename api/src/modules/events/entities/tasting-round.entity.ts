@@ -16,6 +16,7 @@ export enum TastingRoundStatus {
   ACTIVE = 'ACTIVE',
   VOTING_CLOSED = 'VOTING_CLOSED',
   REVEALED = 'REVEALED',
+  SKIPPED = 'SKIPPED',
 }
 
 @Entity({ name: 'tasting_rounds' })

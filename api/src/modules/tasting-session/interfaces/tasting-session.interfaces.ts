@@ -13,6 +13,14 @@ export interface RoundActionPayload {
   roundId: string;
 }
 
+export interface AddRoundTimePayload extends RoundActionPayload {
+  additionalSeconds: number;
+}
+
+export interface RestartRoundPayload extends RoundActionPayload {
+  durationSeconds?: number;
+}
+
 export interface ParticipantCounterPayload {
   eventId: string;
   roundId: string | null;

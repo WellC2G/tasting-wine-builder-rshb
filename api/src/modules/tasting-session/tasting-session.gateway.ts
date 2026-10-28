@@ -27,15 +27,16 @@ import {
   SESSION_CONNECTION_ERROR_MESSAGE,
   STATS_OPENED_MESSAGE,
   TASTING_NAMESPACE,
-  TIMER_EXPIRED_MESSAGE,
   VOTING_CLOSED_BY_HOST_MESSAGE,
   tastingRoom,
 } from './tasting-session.constants';
 import { TastingSessionService } from './tasting-session.service';
 import { RoomStateService } from './room-state.service';
 import type {
+  AddRoundTimePayload,
   JoinEventPayload,
   ParticipantCounterPayload,
+  RestartRoundPayload,
   RoundActionPayload,
   SocketAuthContext,
   StartRoundPayload,
@@ -169,6 +170,50 @@ export class TastingSessionGateway
     });
   }
 
+  @SubscribeMessage('host:start_event')
+  async handleStartEvent(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isJoinEventPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const event = await this.tastingSessionService.startEvent(
+        payload.eventId,
+        hostId,
+      );
+      const room = tastingRoom(event.id);
+
+      await socket.join(room);
+      await this.broadcastParticipantCounter(event.id);
+    });
+  }
+
+  @SubscribeMessage('host:finish_event')
+  async handleFinishEvent(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isJoinEventPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const event = await this.tastingSessionService.finishEvent(
+        payload.eventId,
+        hostId,
+      );
+      const room = tastingRoom(event.id);
+
+      await socket.join(room);
+      await this.broadcastParticipantCounter(event.id);
+    });
+  }
+
   @SubscribeMessage('host:start_round')
   async handleStartRound(
     @ConnectedSocket() socket: TastingSocket,
@@ -196,12 +241,6 @@ export class TastingSessionGateway
         roundId: round.id,
         durationSeconds: round.durationSeconds,
         endsAt,
-        onExpire: () => {
-          this.server.to(room).emit('voting_closed', {
-            roundId: round.id,
-            message: TIMER_EXPIRED_MESSAGE,
-          });
-        },
       });
 
       const basePayload = {
@@ -258,7 +297,204 @@ export class TastingSessionGateway
 
       this.server.to(room).emit('voting_closed', {
         roundId: round.id,
+        durationSeconds: round.durationSeconds,
         message: VOTING_CLOSED_BY_HOST_MESSAGE,
+      });
+
+      const counter =
+        await this.tastingSessionService.getParticipantCounter(
+          event.id,
+          round.id,
+        );
+
+      this.server
+        .to(room)
+        .emit('participant_counter_updated', counter);
+    });
+  }
+
+  @SubscribeMessage('host:resume_round')
+  async handleResumeRound(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRoundActionPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round, endsAt } =
+        await this.tastingSessionService.resumeRound(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+      this.roomStateService.startRoundTimer({
+        eventId: event.id,
+        roundId: round.id,
+        durationSeconds: round.durationSeconds,
+        endsAt,
+      });
+
+      const basePayload = {
+        roundId: round.id,
+        orderNumber: round.orderNumber,
+        blindLabel: round.blindLabel,
+        scaleType: event.scaleType,
+        durationSeconds: round.durationSeconds,
+        endsAt: endsAt.toISOString(),
+        isResumed: true,
+      };
+
+      if (event.mode === TastingMode.OPEN) {
+        this.server.to(room).emit('round_started', {
+          ...basePayload,
+          wine: this.toWineDetails(round.wine),
+        });
+      } else {
+        this.server.to(room).emit('round_started', basePayload);
+      }
+
+      const counter =
+        await this.tastingSessionService.getParticipantCounter(
+          event.id,
+          round.id,
+        );
+
+      this.server
+        .to(room)
+        .emit('participant_counter_updated', counter);
+    });
+  }
+
+  @SubscribeMessage('host:add_round_time')
+  async handleAddRoundTime(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isAddRoundTimePayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round, endsAt, remainingSeconds } =
+        await this.tastingSessionService.addRoundTime(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+          payload.additionalSeconds,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+
+      if (round.status === TastingRoundStatus.ACTIVE) {
+        this.roomStateService.startRoundTimer({
+          eventId: event.id,
+          roundId: round.id,
+          durationSeconds: round.durationSeconds,
+          endsAt,
+        });
+      }
+
+      this.server.to(room).emit('round_timer_updated', {
+        roundId: round.id,
+        durationSeconds: round.durationSeconds,
+        endsAt: endsAt.toISOString(),
+        remainingSeconds,
+      });
+    });
+  }
+
+  @SubscribeMessage('host:restart_round')
+  async handleRestartRound(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRestartRoundPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round, endsAt } =
+        await this.tastingSessionService.restartRound(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+          payload.durationSeconds,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+      this.roomStateService.startRoundTimer({
+        eventId: event.id,
+        roundId: round.id,
+        durationSeconds: round.durationSeconds,
+        endsAt,
+      });
+
+      const basePayload = {
+        roundId: round.id,
+        orderNumber: round.orderNumber,
+        blindLabel: round.blindLabel,
+        scaleType: event.scaleType,
+        durationSeconds: round.durationSeconds,
+        endsAt: endsAt.toISOString(),
+        resetRatings: true,
+      };
+
+      if (event.mode === TastingMode.OPEN) {
+        this.server.to(room).emit('round_started', {
+          ...basePayload,
+          wine: this.toWineDetails(round.wine),
+        });
+      } else {
+        this.server.to(room).emit('round_started', basePayload);
+      }
+
+      const counter =
+        await this.tastingSessionService.getParticipantCounter(
+          event.id,
+          round.id,
+        );
+
+      this.server
+        .to(room)
+        .emit('participant_counter_updated', counter);
+    });
+  }
+
+  @SubscribeMessage('host:skip_round')
+  async handleSkipRound(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRoundActionPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round } =
+        await this.tastingSessionService.skipRound(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+
+      this.server.to(room).emit('round_skipped', {
+        roundId: round.id,
+        blindLabel: round.blindLabel,
+        message: 'Образец пропущен ведущим',
       });
 
       const counter =
@@ -586,6 +822,39 @@ export class TastingSessionGateway
       isUUID(candidate.eventId) &&
       typeof candidate.roundId === 'string' &&
       isUUID(candidate.roundId)
+    );
+  }
+
+  private isAddRoundTimePayload(
+    payload: unknown,
+  ): payload is AddRoundTimePayload {
+    if (!this.isRoundActionPayload(payload)) {
+      return false;
+    }
+
+    const candidate = payload as Partial<AddRoundTimePayload>;
+
+    return (
+      Number.isInteger(candidate.additionalSeconds) &&
+      (candidate.additionalSeconds ?? 0) >= 1 &&
+      (candidate.additionalSeconds ?? 0) <= 3600
+    );
+  }
+
+  private isRestartRoundPayload(
+    payload: unknown,
+  ): payload is RestartRoundPayload {
+    if (!this.isRoundActionPayload(payload)) {
+      return false;
+    }
+
+    const candidate = payload as Partial<RestartRoundPayload>;
+
+    return (
+      candidate.durationSeconds === undefined ||
+      (Number.isInteger(candidate.durationSeconds) &&
+        candidate.durationSeconds >= 1 &&
+        candidate.durationSeconds <= 3600)
     );
   }
 

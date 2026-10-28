@@ -370,6 +370,17 @@ export const apiClient = {
       });
     },
 
+    finish(
+      eventId: string,
+    ): Promise<{ eventId: string; status: string }> {
+      return request<{ eventId: string; status: string }>(
+        `/api/v1/events/${eventId}/finish`,
+        {
+          method: 'POST',
+        },
+      );
+    },
+
     remove(eventId: string): Promise<void> {
       return request<void>(`/api/v1/events/${eventId}`, {
         method: 'DELETE',

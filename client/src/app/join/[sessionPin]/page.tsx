@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
+  Award,
   Check,
   CheckCircle2,
   Clock3,
@@ -37,6 +38,7 @@ import {
   MODE_LABELS,
   SCALE_LABELS,
   WINE_TYPE_LABELS,
+  formatCountdown,
   pluralize,
 } from '@/lib/format';
 import {
@@ -50,6 +52,8 @@ import {
 } from '@/lib/rating';
 import { probeClientNetwork } from '@/lib/network-probe';
 import {
+  clearStoredFormDraft,
+  clearStoredRating,
   getGuestSession,
   getHardwareProfile,
   getNormalizedScreenResolution,
@@ -63,6 +67,7 @@ import {
 } from '@/lib/session';
 import type {
   CreateRatingInput,
+  EventStatus,
   GuestCurrentRound,
   GuestEventInfo,
   GuestJoinResponse,
@@ -75,7 +80,11 @@ import type {
 } from '@/types/api';
 import type {
   BottleRevealedPayload,
+  EventFinishedPayload,
+  EventStatusUpdatedPayload,
+  RoundSkippedPayload,
   RoundStartedPayload,
+  RoundTimerUpdatedPayload,
   SocketMessagePayload,
   VotingClosedPayload,
 } from '@/types/realtime';
@@ -87,7 +96,27 @@ type GuestPhase =
   | 'voting'
   | 'submitted'
   | 'closed'
-  | 'revealed';
+  | 'revealed'
+  | 'event_finished';
+
+const DEFAULT_GUEST_FORM: GuestRoundFormDraft = {
+  parker: {
+    appearance: 3,
+    aroma: 9,
+    taste: 12,
+    potential: 6,
+  },
+  organoleptics: {
+    sweetness: 5,
+    acidity: 5,
+    tannins: 5,
+    body: 5,
+    aromaIntensity: 5,
+  },
+  stars: 3,
+  selectedTags: [],
+  notes: '',
+};
 
 type ToastState = {
   message: string;
@@ -157,8 +186,16 @@ export default function GuestJoinPage() {
   );
   const [currentRound, setCurrentRound] =
     useState<GuestCurrentRound | null>(null);
+  const [eventStatus, setEventStatus] =
+    useState<EventStatus>('DRAFT');
   const [wine, setWine] = useState<RevealedWine | null>(null);
   const [stats, setStats] = useState<RoundStats | null>(null);
+  const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [now, setNow] = useState(Date.now());
+  const [waitingMessage, setWaitingMessage] = useState<string | null>(
+    null,
+  );
+  const activeRoundIdRef = useRef<string | null>(null);
   const [ownRating, setOwnRating] =
     useState<RatingResponse | null>(null);
   const [joining, setJoining] = useState(false);
@@ -195,6 +232,16 @@ export default function GuestJoinPage() {
     connectionError,
     connectCount,
   } = useTastingSocket(guestToken);
+
+  useEffect(() => {
+    activeRoundIdRef.current = currentRound?.roundId ?? null;
+  }, [currentRound?.roundId]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 500);
+
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const roundId = currentRound?.roundId;
@@ -244,17 +291,33 @@ export default function GuestJoinPage() {
   const hydrateEvent = async (
     info: GuestEventInfo,
     token: string,
+    status?: EventStatus,
   ) => {
     setEventInfo(info);
     setWine(null);
     setStats(null);
     setSubmitError(null);
+    setWaitingMessage(null);
+
+    if (status) {
+      setEventStatus(status);
+    }
 
     const round = info.currentRound;
+
+    if (status === 'FINISHED' || status === 'EXPORTED') {
+      setCurrentRound(round);
+      setOwnRating(round ? getStoredRating(round.roundId) : null);
+      setStats(null);
+      setEndsAt(null);
+      setPhase('event_finished');
+      return;
+    }
 
     if (!round) {
       setCurrentRound(null);
       setOwnRating(null);
+      setEndsAt(null);
       setPhase('waiting');
       return;
     }
@@ -267,6 +330,7 @@ export default function GuestJoinPage() {
       const roundStats = await hydrateStats(round.roundId, token);
       setStats(roundStats);
       setWine(round.wine ?? null);
+      setEndsAt(null);
       setPhase('revealed');
       return;
     }
@@ -276,15 +340,33 @@ export default function GuestJoinPage() {
         setWine(round.wine);
       }
       applyFormDraft(restoreFormForRound(round.roundId));
+      setEndsAt(
+        new Date(
+          Date.now() + round.remainingSeconds * 1000,
+        ).getTime(),
+      );
       setPhase(savedRating ? 'submitted' : 'voting');
       return;
     }
 
     if (round.status === 'VOTING_CLOSED') {
-      setPhase(savedRating ? 'submitted' : 'closed');
+      if (round.wine) {
+        setWine(round.wine);
+      }
+      setEndsAt(null);
+      setPhase('closed');
       return;
     }
 
+    if (round.status === 'SKIPPED') {
+      setWine(null);
+      setEndsAt(null);
+      setWaitingMessage('Образец пропущен. Ожидание следующего раунда…');
+      setPhase('waiting');
+      return;
+    }
+
+    setEndsAt(null);
     setPhase('waiting');
   };
 
@@ -310,7 +392,7 @@ export default function GuestJoinPage() {
         : null,
     };
 
-    await hydrateEvent(info, token);
+    await hydrateEvent(info, token, live.status);
   };
 
   const joinSession = async (nicknameValue: string) => {
@@ -403,16 +485,35 @@ export default function GuestJoinPage() {
         wine: payload.wine,
       };
 
+      if (payload.resetRatings) {
+        clearStoredRating(payload.roundId);
+        clearStoredFormDraft(payload.roundId);
+      }
+
+      const savedRating = payload.resetRatings
+        ? null
+        : getStoredRating(payload.roundId);
+
+      setEventStatus('ACTIVE');
       setCurrentRound(nextRound);
       setWine(payload.wine ?? null);
       setStats(null);
       setSubmitError(null);
-      const savedRating = getStoredRating(payload.roundId);
+      setWaitingMessage(null);
       setOwnRating(savedRating);
-      applyFormDraft(restoreFormForRound(payload.roundId));
-      setPhase('voting');
+      applyFormDraft(
+        payload.resetRatings
+          ? DEFAULT_GUEST_FORM
+          : restoreFormForRound(payload.roundId),
+      );
+      setEndsAt(new Date(payload.endsAt).getTime());
+      setPhase(savedRating ? 'submitted' : 'voting');
       setToast({
-        message: 'Сомелье запустил новый раунд',
+        message: payload.resetRatings
+          ? 'Раунд начат заново. Оценки этого образца сброшены.'
+          : payload.isResumed
+            ? 'Голосование по образцу продолжено'
+            : 'Сомелье запустил новый раунд',
         tone: 'info',
       });
     };
@@ -420,13 +521,95 @@ export default function GuestJoinPage() {
     const handleVotingClosed = (payload: VotingClosedPayload) => {
       setCurrentRound((round) =>
         round && round.roundId === payload.roundId
-          ? { ...round, status: 'VOTING_CLOSED' }
+          ? {
+              ...round,
+              status: 'VOTING_CLOSED',
+              durationSeconds:
+                payload.durationSeconds ?? round.durationSeconds,
+            }
           : round,
       );
+      setEndsAt(null);
       setPhase((current) =>
-        current === 'voting' ? 'closed' : current,
+        current === 'voting' || current === 'submitted'
+          ? 'closed'
+          : current,
       );
       setToast({ message: payload.message, tone: 'info' });
+    };
+
+    const handleRoundTimerUpdated = (
+      payload: RoundTimerUpdatedPayload,
+    ) => {
+      if (activeRoundIdRef.current !== payload.roundId) {
+        return;
+      }
+
+      setCurrentRound((round) =>
+        round && round.roundId === payload.roundId
+          ? {
+              ...round,
+              durationSeconds: payload.durationSeconds,
+              remainingSeconds: payload.remainingSeconds,
+            }
+          : round,
+      );
+      setEndsAt(new Date(payload.endsAt).getTime());
+      setToast({
+        message: 'Сомелье добавил время раунда',
+        tone: 'info',
+      });
+    };
+
+    const handleRoundSkipped = (payload: RoundSkippedPayload) => {
+      if (activeRoundIdRef.current !== payload.roundId) {
+        return;
+      }
+
+      setWine(null);
+      setStats(null);
+      setEndsAt(null);
+      setWaitingMessage(
+        'Образец пропущен. Ожидание следующего раунда…',
+      );
+      setPhase('waiting');
+      setCurrentRound((round) =>
+        round && round.roundId === payload.roundId
+          ? { ...round, status: 'SKIPPED' }
+          : round,
+      );
+      setToast({ message: payload.message, tone: 'info' });
+    };
+
+    const handleEventStatusUpdated = (
+      payload: EventStatusUpdatedPayload,
+    ) => {
+      if (payload.eventId !== eventInfo?.eventId) {
+        return;
+      }
+
+      setEventStatus(payload.status);
+
+      if (
+        payload.status === 'FINISHED' ||
+        payload.status === 'EXPORTED'
+      ) {
+        setEndsAt(null);
+        setWaitingMessage(null);
+        setPhase('event_finished');
+      }
+    };
+
+    const handleEventFinished = (payload: EventFinishedPayload) => {
+      if (payload.eventId !== eventInfo?.eventId) {
+        return;
+      }
+
+      setEventStatus(payload.status);
+      setEndsAt(null);
+      setWaitingMessage(null);
+      setPhase('event_finished');
+      setToast({ message: payload.message, tone: 'success' });
     };
 
     const handleBottleRevealed = (
@@ -461,19 +644,27 @@ export default function GuestJoinPage() {
 
     socket.on('round_started', handleRoundStarted);
     socket.on('voting_closed', handleVotingClosed);
+    socket.on('round_timer_updated', handleRoundTimerUpdated);
+    socket.on('round_skipped', handleRoundSkipped);
     socket.on('bottle_revealed', handleBottleRevealed);
+    socket.on('event_status_updated', handleEventStatusUpdated);
+    socket.on('event_finished', handleEventFinished);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
     return () => {
       socket.off('round_started', handleRoundStarted);
       socket.off('voting_closed', handleVotingClosed);
+      socket.off('round_timer_updated', handleRoundTimerUpdated);
+      socket.off('round_skipped', handleRoundSkipped);
       socket.off('bottle_revealed', handleBottleRevealed);
+      socket.off('event_status_updated', handleEventStatusUpdated);
+      socket.off('event_finished', handleEventFinished);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket]);
+  }, [socket, eventInfo?.eventId]);
 
   useEffect(() => {
     if (
@@ -597,6 +788,10 @@ export default function GuestJoinPage() {
     : Math.round((50 + 12.5 * (stars - 1)) * 10) / 10;
   const liveCategory = getQualityCategory(liveTotal);
   const currentRoundNumber = currentRound?.orderNumber ?? 0;
+  const remainingSeconds =
+    currentRound?.status === 'ACTIVE' && endsAt
+      ? Math.max(0, Math.ceil((endsAt - now) / 1000))
+      : (currentRound?.remainingSeconds ?? 0);
 
   if (phase === 'loading') {
     return <PageLoader message="Ищем вашу дегустацию…" />;
@@ -734,7 +929,13 @@ export default function GuestJoinPage() {
               <h1 className="mt-2 truncate text-xl font-semibold tracking-tight text-white">
                 {eventTitle}
               </h1>
-              <p className="mt-1 text-xs text-stone-500">{nickname}</p>
+              <p className="mt-1 text-xs text-stone-500">
+                {nickname}
+                {eventStatus === 'FINISHED' ||
+                eventStatus === 'EXPORTED'
+                  ? ' · дегустация завершена'
+                  : ''}
+              </p>
             </div>
             <span className="shrink-0 rounded-xl border border-white/10 px-3 py-2 font-mono text-sm tracking-[0.15em] text-stone-300">
               {sessionPin}
@@ -758,6 +959,16 @@ export default function GuestJoinPage() {
                 <span className="rounded-full border border-sky-400/25 bg-sky-400/10 px-3 py-1 text-xs text-sky-200">
                   Образец раскрыт
                 </span>
+              ) : currentRound.status === 'SKIPPED' ? (
+                <span className="rounded-full border border-stone-500/30 bg-stone-500/10 px-3 py-1 text-xs text-stone-400">
+                  Пропущен
+                </span>
+              ) : null}
+              {currentRound.status === 'ACTIVE' ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 font-mono text-xs text-stone-300">
+                  <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+                  {formatCountdown(remainingSeconds)}
+                </span>
               ) : null}
             </div>
           ) : null}
@@ -777,7 +988,7 @@ export default function GuestJoinPage() {
               <Hourglass className="h-10 w-10" aria-hidden="true" />
             </div>
             <h2 className="mt-6 text-2xl font-semibold tracking-tight text-white">
-              Ожидание запуска раунда сомелье…
+              {waitingMessage ?? 'Ожидание запуска раунда сомелье…'}
             </h2>
             <p className="mt-3 max-w-sm text-sm leading-6 text-stone-400">
               Экран обновится автоматически, когда ведущий откроет
@@ -825,8 +1036,14 @@ export default function GuestJoinPage() {
             <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-stone-400">
               {phase === 'submitted'
                 ? 'Ожидание раскрытия карты ведущим…'
-                : 'Ведущий закрыл голосование по этому образцу. Ожидайте раскрытия карты.'}
+                : 'Ведущий приостановил приём оценок по этому образцу. Ожидайте продолжения или раскрытия карты.'}
             </p>
+
+            {eventInfo?.mode === 'OPEN' && wine ? (
+              <div className="mt-6 text-left">
+                <WineDetailsCard wine={wine} />
+              </div>
+            ) : null}
 
             {ownRating ? (
               <div className="mx-auto mt-6 max-w-sm rounded-2xl border border-white/10 bg-stone-950/50 p-4 text-left">
@@ -884,6 +1101,9 @@ export default function GuestJoinPage() {
 
         {phase === 'voting' && currentRound && eventInfo ? (
           <div className="mt-5 space-y-5">
+            {eventInfo.mode === 'OPEN' && wine ? (
+              <WineDetailsCard wine={wine} />
+            ) : null}
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1097,6 +1317,46 @@ export default function GuestJoinPage() {
                 : 'Отправить оценку'}
             </button>
           </div>
+        ) : null}
+
+        {phase === 'event_finished' ? (
+          <section className="mt-5 overflow-hidden rounded-3xl border border-wine-400/25 bg-gradient-to-br from-wine-950/70 via-stone-900/70 to-stone-950 px-6 py-14 text-center">
+            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-wine-400/30 bg-wine-500/15 text-wine-200">
+              <Award className="h-12 w-12" aria-hidden="true" />
+            </div>
+            <p className="mt-7 text-xs uppercase tracking-[0.22em] text-wine-300">
+              {eventInfo?.title ?? 'Дегустация'}
+            </p>
+            <h2
+              data-testid="guest-event-finished"
+              className="mt-3 text-balance text-3xl font-semibold tracking-tight text-white"
+            >
+              Дегустация завершена!
+            </h2>
+            <p className="mx-auto mt-4 max-w-sm text-base leading-7 text-stone-300">
+              Спасибо за участие. Ваши оценки помогут составить
+              Народный винный рейтинг.
+            </p>
+            {ownRating ? (
+              <div className="mx-auto mt-7 max-w-xs rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
+                  Ваша последняя оценка
+                </p>
+                <p className="mt-1 text-3xl font-semibold text-wine-200">
+                  {ownRating.totalScore.toLocaleString('ru-RU', {
+                    maximumFractionDigits: 1,
+                  })}
+                </p>
+                <p className="mt-1 text-sm text-stone-400">
+                  {ownRating.qualityLabel}
+                </p>
+              </div>
+            ) : null}
+            <p className="mt-6 text-xs leading-5 text-stone-500">
+              Если сомелье откроет статистику вина, она появится на
+              этом экране автоматически.
+            </p>
+          </section>
         ) : null}
 
         {phase === 'revealed' ? (

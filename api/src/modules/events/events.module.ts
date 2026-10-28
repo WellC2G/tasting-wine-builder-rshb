@@ -8,10 +8,12 @@ import { EventsController } from './events.controller';
 import { EventsService } from './events.service';
 import { TastingEvent } from './entities/tasting-event.entity';
 import { TastingRound } from './entities/tasting-round.entity';
+import { TastingSessionModule } from '../tasting-session/tasting-session.module';
 
 @Module({
   imports: [
     AuthModule,
+    TastingSessionModule,
     TypeOrmModule.forFeature([
       TastingEvent,
       TastingRound,

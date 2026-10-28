@@ -7,19 +7,16 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { TastingSessionPublisherService } from '../realtime/tasting-session-publisher.service';
 import {
   TastingRound,
   TastingRoundStatus,
 } from '../events/entities/tasting-round.entity';
-import { TIMER_EXPIRED_MESSAGE } from './tasting-session.constants';
 
 interface StartRoundTimerParams {
   eventId: string;
   roundId: string;
   durationSeconds: number;
   endsAt: Date;
-  onExpire: () => void;
 }
 
 interface ActiveRoundTimer {
@@ -28,7 +25,6 @@ interface ActiveRoundTimer {
   durationSeconds: number;
   endsAt: Date;
   timeout: NodeJS.Timeout;
-  onExpire: () => void;
 }
 
 @Injectable()
@@ -40,7 +36,6 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
   constructor(
     @InjectRepository(TastingRound)
     private readonly roundsRepository: Repository<TastingRound>,
-    private readonly publisher: TastingSessionPublisherService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -72,29 +67,10 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
         );
 
         if (endsAt.getTime() <= Date.now()) {
-          const result = await this.roundsRepository.update(
-            {
-              id: round.id,
-              eventId: round.eventId,
-              status: TastingRoundStatus.ACTIVE,
-            },
-            { status: TastingRoundStatus.VOTING_CLOSED },
+          this.logger.log(
+            `Active round ${round.id} timer already elapsed; ` +
+              'voting remains open until the host acts',
           );
-
-          if (result.affected && result.affected > 0) {
-            this.publisher.emitToEvent(
-              round.eventId,
-              'voting_closed',
-              {
-                roundId: round.id,
-                message: TIMER_EXPIRED_MESSAGE,
-              },
-            );
-            this.logger.log(
-              `Closed expired active round ${round.id} on startup`,
-            );
-          }
-
           continue;
         }
 
@@ -103,16 +79,6 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
           roundId: round.id,
           durationSeconds: round.durationSeconds,
           endsAt,
-          onExpire: () => {
-            this.publisher.emitToEvent(
-              round.eventId,
-              'voting_closed',
-              {
-                roundId: round.id,
-                message: TIMER_EXPIRED_MESSAGE,
-              },
-            );
-          },
         });
 
         const remainingSeconds = Math.max(
@@ -133,8 +99,8 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * Registers the only active timer for an event/round pair and closes voting
-   * automatically when the deadline is reached.
+   * Registers the only active timer for an event/round pair. Reaching zero
+   * only stops the countdown; the host explicitly pauses or finalizes voting.
    */
   startRoundTimer(params: StartRoundTimerParams): void {
     this.clearRoundTimer(params.eventId, params.roundId);
@@ -151,7 +117,6 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
       durationSeconds: params.durationSeconds,
       endsAt: params.endsAt,
       timeout,
-      onExpire: params.onExpire,
     });
   }
 
@@ -225,26 +190,9 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.timers.delete(key);
-
-    try {
-      const result = await this.roundsRepository.update(
-        {
-          id: timer.roundId,
-          eventId: timer.eventId,
-          status: TastingRoundStatus.ACTIVE,
-        },
-        { status: TastingRoundStatus.VOTING_CLOSED },
-      );
-
-      if (result.affected && result.affected > 0) {
-        timer.onExpire();
-      }
-    } catch (error) {
-      this.logger.error(
-        `Failed to close voting for round ${timer.roundId}`,
-        error instanceof Error ? error.stack : String(error),
-      );
-    }
+    this.logger.log(
+      `Round ${timer.roundId} timer reached zero; voting remains open`,
+    );
   }
 
   private timerKey(eventId: string, roundId: string): string {

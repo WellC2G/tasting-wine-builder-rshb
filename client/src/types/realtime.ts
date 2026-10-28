@@ -12,10 +12,37 @@ export interface RoundStartedPayload {
   durationSeconds: number;
   endsAt: string;
   wine?: RevealedWine;
+  isResumed?: boolean;
+  resetRatings?: boolean;
 }
 
 export interface VotingClosedPayload {
   roundId: string;
+  message: string;
+  durationSeconds?: number;
+}
+
+export interface RoundTimerUpdatedPayload {
+  roundId: string;
+  durationSeconds: number;
+  endsAt: string;
+  remainingSeconds: number;
+}
+
+export interface RoundSkippedPayload {
+  roundId: string;
+  blindLabel: string;
+  message: string;
+}
+
+export interface EventStatusUpdatedPayload {
+  eventId: string;
+  status: 'DRAFT' | 'ACTIVE' | 'FINISHED' | 'EXPORTED';
+}
+
+export interface EventFinishedPayload {
+  eventId: string;
+  status: 'FINISHED';
   message: string;
 }
 
@@ -54,10 +81,22 @@ export interface RoundActionPayload {
   roundId: string;
 }
 
+export interface AddRoundTimePayload extends RoundActionPayload {
+  additionalSeconds: number;
+}
+
+export interface RestartRoundPayload extends RoundActionPayload {
+  durationSeconds?: number;
+}
+
 export interface ServerToClientEvents {
   round_started: (payload: RoundStartedPayload) => void;
+  round_timer_updated: (payload: RoundTimerUpdatedPayload) => void;
+  round_skipped: (payload: RoundSkippedPayload) => void;
   voting_closed: (payload: VotingClosedPayload) => void;
   bottle_revealed: (payload: BottleRevealedPayload) => void;
+  event_status_updated: (payload: EventStatusUpdatedPayload) => void;
+  event_finished: (payload: EventFinishedPayload) => void;
   participant_counter_updated: (
     payload: ParticipantCounterPayload,
   ) => void;
@@ -67,8 +106,14 @@ export interface ServerToClientEvents {
 
 export interface ClientToServerEvents {
   'host:join_event': (payload: JoinEventPayload) => void;
+  'host:start_event': (payload: JoinEventPayload) => void;
+  'host:finish_event': (payload: JoinEventPayload) => void;
   'host:start_round': (payload: StartRoundPayload) => void;
   'host:lock_voting': (payload: RoundActionPayload) => void;
+  'host:resume_round': (payload: RoundActionPayload) => void;
+  'host:add_round_time': (payload: AddRoundTimePayload) => void;
+  'host:restart_round': (payload: RestartRoundPayload) => void;
+  'host:skip_round': (payload: RoundActionPayload) => void;
   'host:reveal_bottle': (payload: RoundActionPayload) => void;
   'host:show_stats': (payload: RoundActionPayload) => void;
 }

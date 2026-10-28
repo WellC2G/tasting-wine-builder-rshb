@@ -13,6 +13,7 @@ import { In, Repository } from 'typeorm';
 import { isUniqueViolation } from '../../common/database/is-unique-violation';
 import { Wine } from '../catalog/entities/wine.entity';
 import { Participant } from '../auth/entities/participant.entity';
+import { TastingSessionService } from '../tasting-session/tasting-session.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { EventRoundResponseDto } from './dto/event-round-response.dto';
@@ -52,6 +53,7 @@ export class EventsService {
     private readonly participantsRepository: Repository<Participant>,
     @InjectRepository(Wine)
     private readonly winesRepository: Repository<Wine>,
+    private readonly tastingSessionService: TastingSessionService,
   ) {}
 
   async create(
@@ -217,6 +219,16 @@ export class EventsService {
 
     if (!event) {
       throw new NotFoundException('Мероприятие не найдено');
+    }
+
+    if (dto.status === TastingEventStatus.ACTIVE) {
+      await this.tastingSessionService.startEvent(id, hostId);
+      return this.findOneForHost(id, hostId);
+    }
+
+    if (dto.status === TastingEventStatus.FINISHED) {
+      await this.tastingSessionService.finishEvent(id, hostId);
+      return this.findOneForHost(id, hostId);
     }
 
     event.status = dto.status;

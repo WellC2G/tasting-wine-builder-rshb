@@ -5,17 +5,23 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
+  Award,
   CheckCircle2,
   Clock3,
   Eye,
+  Flag,
   Hash,
   Loader2,
   Lock,
   Monitor,
+  Pause,
   Play,
+  Plus,
   QrCode,
   Radio,
+  RotateCcw,
   Send,
+  SkipForward,
   Users,
   Vote,
   Wine as WineIcon,
@@ -59,8 +65,12 @@ import type {
 } from '@/types/api';
 import type {
   BottleRevealedPayload,
+  EventFinishedPayload,
+  EventStatusUpdatedPayload,
   ParticipantCounterPayload,
+  RoundSkippedPayload,
   RoundStartedPayload,
+  RoundTimerUpdatedPayload,
   SocketMessagePayload,
   VotingClosedPayload,
 } from '@/types/realtime';
@@ -109,8 +119,23 @@ export default function HostControlPage() {
   const [endsAt, setEndsAt] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
   const [pendingAction, setPendingAction] = useState<
-    'start' | 'lock' | 'reveal' | 'stats' | null
+    | 'event_start'
+    | 'event_finish'
+    | 'start'
+    | 'lock'
+    | 'resume'
+    | 'time'
+    | 'restart'
+    | 'skip'
+    | 'reveal'
+    | 'stats'
+    | null
   >(null);
+  const [restartTarget, setRestartTarget] =
+    useState<EventRound | null>(null);
+  const [skipTarget, setSkipTarget] = useState<EventRound | null>(
+    null,
+  );
   const [selectedRoundStats, setSelectedRoundStats] =
     useState<RoundStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -260,7 +285,14 @@ export default function HostControlPage() {
         roundId: payload.roundId,
       }));
       setPendingAction(null);
-      setToast({ message: 'Раунд запущен', tone: 'success' });
+      setToast({
+        message: payload.resetRatings
+          ? 'Раунд начат заново. Оценки этого образца сброшены.'
+          : payload.isResumed
+            ? 'Раунд продолжен'
+            : 'Раунд запущен',
+        tone: 'success',
+      });
     };
 
     const handleVotingClosed = (payload: VotingClosedPayload) => {
@@ -270,7 +302,13 @@ export default function HostControlPage() {
               ...current,
               rounds: current.rounds.map((round) =>
                 round.id === payload.roundId
-                  ? { ...round, status: 'VOTING_CLOSED' }
+                  ? {
+                      ...round,
+                      status: 'VOTING_CLOSED',
+                      durationSeconds:
+                        payload.durationSeconds ??
+                        round.durationSeconds,
+                    }
                   : round,
               ),
             }
@@ -281,6 +319,91 @@ export default function HostControlPage() {
       );
       setPendingAction(null);
       setToast({ message: payload.message, tone: 'info' });
+    };
+
+    const handleRoundTimerUpdated = (
+      payload: RoundTimerUpdatedPayload,
+    ) => {
+      setEvent((current) =>
+        current
+          ? {
+              ...current,
+              rounds: current.rounds.map((round) =>
+                round.id === payload.roundId
+                  ? {
+                      ...round,
+                      durationSeconds: payload.durationSeconds,
+                    }
+                  : round,
+              ),
+            }
+          : current,
+      );
+
+      setEndsAt((current) =>
+        payload.roundId === selectedRoundId
+          ? new Date(payload.endsAt).getTime()
+          : current,
+      );
+      setPendingAction(null);
+      setToast({
+        message: `Добавлено время. Осталось ${formatCountdown(
+          payload.remainingSeconds,
+        )}`,
+        tone: 'success',
+      });
+    };
+
+    const handleRoundSkipped = (payload: RoundSkippedPayload) => {
+      setEvent((current) =>
+        current
+          ? {
+              ...current,
+              rounds: current.rounds.map((round) =>
+                round.id === payload.roundId
+                  ? { ...round, status: 'SKIPPED' }
+                  : round,
+              ),
+            }
+          : current,
+      );
+      setSelectedRoundStats(null);
+      setEndsAt(null);
+      setPendingAction(null);
+      setToast({ message: payload.message, tone: 'info' });
+    };
+
+    const handleEventStatusUpdated = (
+      payload: EventStatusUpdatedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setEvent((current) =>
+        current ? { ...current, status: payload.status } : current,
+      );
+      setPendingAction(null);
+
+      if (payload.status === 'ACTIVE') {
+        setToast({
+          message: 'Дегустация началась. Пульт заблокирован до завершения.',
+          tone: 'success',
+        });
+      }
+    };
+
+    const handleEventFinished = (payload: EventFinishedPayload) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setEvent((current) =>
+        current ? { ...current, status: payload.status } : current,
+      );
+      setEndsAt(null);
+      setPendingAction(null);
+      setToast({ message: payload.message, tone: 'success' });
     };
 
     const handleBottleRevealed = (
@@ -353,7 +476,11 @@ export default function HostControlPage() {
 
     socket.on('round_started', handleRoundStarted);
     socket.on('voting_closed', handleVotingClosed);
+    socket.on('round_timer_updated', handleRoundTimerUpdated);
+    socket.on('round_skipped', handleRoundSkipped);
     socket.on('bottle_revealed', handleBottleRevealed);
+    socket.on('event_status_updated', handleEventStatusUpdated);
+    socket.on('event_finished', handleEventFinished);
     socket.on('participant_counter_updated', handleCounter);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
@@ -361,7 +488,11 @@ export default function HostControlPage() {
     return () => {
       socket.off('round_started', handleRoundStarted);
       socket.off('voting_closed', handleVotingClosed);
+      socket.off('round_timer_updated', handleRoundTimerUpdated);
+      socket.off('round_skipped', handleRoundSkipped);
       socket.off('bottle_revealed', handleBottleRevealed);
+      socket.off('event_status_updated', handleEventStatusUpdated);
+      socket.off('event_finished', handleEventFinished);
       socket.off('participant_counter_updated', handleCounter);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
@@ -524,18 +655,78 @@ export default function HostControlPage() {
           ),
         )
       : 0;
+  const eventIsActive = event?.status === 'ACTIVE';
+  const eventIsFinished =
+    event?.status === 'FINISHED' || event?.status === 'EXPORTED';
+  const roundInProgress =
+    rounds.find(
+      (round) =>
+        round.status === 'ACTIVE' ||
+        round.status === 'VOTING_CLOSED',
+    ) ?? null;
+  const roundSelectionLocked =
+    eventIsActive && roundInProgress !== null;
+  const allRoundsFinalized =
+    rounds.length > 0 &&
+    rounds.every(
+      (round) =>
+        round.status === 'REVEALED' || round.status === 'SKIPPED',
+    );
   const controlsDisabled = !connected || pendingAction !== null;
+  const canStartEvent =
+    !controlsDisabled && event?.status === 'DRAFT';
+  const canFinishEvent =
+    !controlsDisabled && eventIsActive && allRoundsFinalized;
   const canStart =
     !controlsDisabled &&
-    selectedRound !== null &&
-    selectedRound.status !== 'ACTIVE';
+    eventIsActive &&
+    selectedRound?.status === 'PENDING' &&
+    roundInProgress === null;
   const canLock =
-    !controlsDisabled && selectedRound?.status === 'ACTIVE';
+    !controlsDisabled &&
+    eventIsActive &&
+    selectedRound?.status === 'ACTIVE';
+  const canResume =
+    !controlsDisabled &&
+    eventIsActive &&
+    selectedRound?.status === 'VOTING_CLOSED';
+  const canAddTime =
+    !controlsDisabled &&
+    eventIsActive &&
+    (selectedRound?.status === 'ACTIVE' ||
+      selectedRound?.status === 'VOTING_CLOSED');
   const canReveal =
     !controlsDisabled &&
-    selectedRound?.status === 'VOTING_CLOSED';
+    eventIsActive &&
+    (selectedRound?.status === 'ACTIVE' ||
+      selectedRound?.status === 'VOTING_CLOSED');
+  const canRestart =
+    !controlsDisabled &&
+    eventIsActive &&
+    selectedRound !== null &&
+    selectedRound.status !== 'PENDING' &&
+    (roundInProgress === null || roundInProgress.id === selectedRound.id);
+  const canSkip =
+    !controlsDisabled &&
+    eventIsActive &&
+    selectedRound !== null &&
+    selectedRound.status !== 'SKIPPED' &&
+    (roundInProgress === null || roundInProgress.id === selectedRound.id);
 
   const handleSelectRound = (round: EventRound) => {
+    if (
+      roundSelectionLocked &&
+      round.id !== selectedRoundId &&
+      roundInProgress !== null
+    ) {
+      setToast({
+        message:
+          'Сначала завершите текущий раунд или пропустите вино',
+        tone: 'info',
+      });
+      return;
+    }
+
     setSelectedRoundId(round.id);
     setSelectedRoundStats(null);
     setEndsAt(computeEndsAt(round));
@@ -556,6 +747,24 @@ export default function HostControlPage() {
           votedCount: 0,
         }));
       });
+  };
+
+  const handleStartEvent = () => {
+    if (!socket || !canStartEvent) {
+      return;
+    }
+
+    setPendingAction('event_start');
+    socket.emit('host:start_event', { eventId });
+  };
+
+  const handleFinishEvent = () => {
+    if (!socket || !canFinishEvent) {
+      return;
+    }
+
+    setPendingAction('event_finish');
+    socket.emit('host:finish_event', { eventId });
   };
 
   const handleStartRound = () => {
@@ -581,6 +790,58 @@ export default function HostControlPage() {
       eventId,
       roundId: selectedRound.id,
     });
+  };
+
+  const handleResumeRound = () => {
+    if (!socket || !selectedRound || !canResume) {
+      return;
+    }
+
+    setPendingAction('resume');
+    socket.emit('host:resume_round', {
+      eventId,
+      roundId: selectedRound.id,
+    });
+  };
+
+  const handleAddRoundTime = (additionalSeconds: number) => {
+    if (!socket || !selectedRound || !canAddTime) {
+      return;
+    }
+
+    setPendingAction('time');
+    socket.emit('host:add_round_time', {
+      eventId,
+      roundId: selectedRound.id,
+      additionalSeconds,
+    });
+  };
+
+  const handleRestartRound = () => {
+    if (!socket || !restartTarget || !canRestart) {
+      return;
+    }
+
+    setPendingAction('restart');
+    socket.emit('host:restart_round', {
+      eventId,
+      roundId: restartTarget.id,
+      durationSeconds: restartTarget.durationSeconds,
+    });
+    setRestartTarget(null);
+  };
+
+  const handleSkipRound = () => {
+    if (!socket || !skipTarget || !canSkip) {
+      return;
+    }
+
+    setPendingAction('skip');
+    socket.emit('host:skip_round', {
+      eventId,
+      roundId: skipTarget.id,
+    });
+    setSkipTarget(null);
   };
 
   const handleRevealBottle = () => {
@@ -662,13 +923,20 @@ export default function HostControlPage() {
       <div className="mx-auto w-full max-w-3xl px-4 pt-4 sm:px-6 sm:pt-6">
         <header className="rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/60 via-stone-900/70 to-stone-950 p-4 sm:p-6">
           <div className="flex items-center justify-between gap-3">
-            <Link
-              href="/host/events"
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl px-2 text-sm text-stone-400 transition hover:text-white"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-              Мероприятия
-            </Link>
+            {event.status === 'ACTIVE' ? (
+              <span className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 text-xs font-medium text-amber-100">
+                <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                Дегустация идёт · выход после завершения
+              </span>
+            ) : (
+              <Link
+                href="/host/events"
+                className="inline-flex min-h-12 items-center gap-2 rounded-xl px-2 text-sm text-stone-400 transition hover:text-white"
+              >
+                <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+                Мероприятия
+              </Link>
+            )}
             <div className="flex items-center gap-2">
               <Link
                 href={`/host/events/${event.id}/screen`}
@@ -741,6 +1009,104 @@ export default function HostControlPage() {
           />
         </div>
 
+        {event.status === 'DRAFT' ? (
+          <section className="mt-5 rounded-3xl border border-emerald-400/20 bg-emerald-400/[0.06] p-4 sm:p-6">
+            <p className="text-xs uppercase tracking-[0.18em] text-emerald-300">
+              Подготовка
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-white">
+              Дегустация ещё не начата
+            </h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-stone-400">
+              Проверьте программу и подключение гостей. После запуска
+              пульт будет заблокирован до завершения дегустации.
+            </p>
+            <button
+              type="button"
+              data-testid="control-start-event"
+              onClick={handleStartEvent}
+              disabled={!canStartEvent}
+              className="mt-4 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 text-base font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
+            >
+              {pendingAction === 'event_start' ? (
+                <Loader2
+                  className="h-5 w-5 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Play className="h-5 w-5" aria-hidden="true" />
+              )}
+              Начать дегустацию
+            </button>
+          </section>
+        ) : null}
+
+        {eventIsActive ? (
+          <section
+            className={cn(
+              'mt-5 rounded-3xl border p-4 sm:p-6',
+              allRoundsFinalized
+                ? 'border-wine-400/30 bg-wine-500/10'
+                : 'border-white/10 bg-white/[0.03]',
+            )}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-wine-300">
+                  Ход дегустации
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-white">
+                  {allRoundsFinalized
+                    ? 'Все образцы раскрыты или пропущены'
+                    : 'Дегустация идёт'}
+                </h2>
+                <p className="mt-2 text-sm text-stone-400">
+                  {rounds.filter(
+                    (round) =>
+                      round.status === 'REVEALED' ||
+                      round.status === 'SKIPPED',
+                  ).length}{' '}
+                  из {rounds.length}{' '}
+                  {pluralize(
+                    rounds.length,
+                    'образца',
+                    'образца',
+                    'образцов',
+                  )}{' '}
+                  обработано
+                </p>
+              </div>
+              <button
+                type="button"
+                data-testid="control-finish-event"
+                onClick={handleFinishEvent}
+                disabled={!canFinishEvent}
+                className="inline-flex min-h-14 shrink-0 items-center justify-center gap-2 rounded-2xl bg-wine-600 px-6 text-base font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {pendingAction === 'event_finish' ? (
+                  <Loader2
+                    className="h-5 w-5 animate-spin"
+                    aria-hidden="true"
+                  />
+                ) : (
+                  <Flag className="h-5 w-5" aria-hidden="true" />
+                )}
+                Завершить дегустацию
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {eventIsFinished ? (
+          <section className="mt-5 rounded-3xl border border-sky-400/20 bg-sky-400/[0.06] p-4 sm:p-6">
+            <p className="inline-flex items-center gap-2 text-sm font-medium text-sky-100">
+              <Award className="h-4 w-4" aria-hidden="true" />
+              Дегустация завершена. Доступен просмотр статистики и
+              выгрузка результатов.
+            </p>
+          </section>
+        ) : null}
+
         <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
           <div className="flex items-center justify-between gap-3">
             <div>
@@ -763,11 +1129,18 @@ export default function HostControlPage() {
                 key={round.id}
                 type="button"
                 onClick={() => handleSelectRound(round)}
+                disabled={
+                  roundSelectionLocked &&
+                  round.id !== selectedRoundId
+                }
                 className={cn(
                   'flex min-h-14 w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition',
                   round.id === selectedRoundId
                     ? 'border-wine-400/50 bg-wine-500/10'
                     : 'border-white/10 bg-stone-950/40 hover:bg-white/[0.04]',
+                  roundSelectionLocked &&
+                    round.id !== selectedRoundId &&
+                    'cursor-not-allowed opacity-40 hover:bg-stone-950/40',
                 )}
               >
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 font-mono text-xs text-stone-300">
@@ -851,19 +1224,33 @@ export default function HostControlPage() {
                 <button
                   type="button"
                   data-testid="control-restart-round"
-                  onClick={handleStartRound}
-                  disabled={!canStart}
+                  onClick={() =>
+                    selectedRound && setRestartTarget(selectedRound)
+                  }
+                  disabled={!canRestart}
                   className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {pendingAction === 'start' ? (
+                  {pendingAction === 'restart' ? (
                     <Loader2
                       className="h-4 w-4 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <Play className="h-4 w-4" aria-hidden="true" />
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Перезапустить голосование
+                  Начать раунд заново
+                </button>
+                <button
+                  type="button"
+                  data-testid="control-skip-round"
+                  onClick={() =>
+                    selectedRound && setSkipTarget(selectedRound)
+                  }
+                  disabled={!canSkip}
+                  className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <SkipForward className="h-4 w-4" aria-hidden="true" />
+                  Пропустить вино
                 </button>
               </div>
 
@@ -981,6 +1368,31 @@ export default function HostControlPage() {
                 </p>
               )}
             </div>
+          ) : selectedRound?.status === 'SKIPPED' ? (
+            <div className="mt-5 rounded-2xl border border-white/10 bg-stone-950/60 p-5">
+              <p className="inline-flex items-center gap-2 text-sm font-medium text-stone-300">
+                <SkipForward className="h-4 w-4" aria-hidden="true" />
+                Образец пропущен ведущим
+              </p>
+              <p className="mt-2 text-sm leading-6 text-stone-500">
+                Гости и экран проектора вернулись в режим ожидания
+                следующего раунда. Оценки этого образца удалены.
+              </p>
+              {eventIsActive ? (
+                <button
+                  type="button"
+                  data-testid="control-restart-skipped"
+                  onClick={() =>
+                    selectedRound && setRestartTarget(selectedRound)
+                  }
+                  disabled={!canRestart}
+                  className="mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Начать раунд заново
+                </button>
+              ) : null}
+            </div>
           ) : (
             <>
               <div className="mt-5 flex items-center gap-4 rounded-2xl border border-white/10 bg-stone-950/60 p-4">
@@ -1005,6 +1417,34 @@ export default function HostControlPage() {
                   </p>
                 </div>
               </div>
+
+              {canAddTime ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="text-xs text-stone-500">
+                    Добавить время:
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="control-add-30"
+                    onClick={() => handleAddRoundTime(30)}
+                    disabled={pendingAction !== null}
+                    className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    30 сек
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="control-add-60"
+                    onClick={() => handleAddRoundTime(60)}
+                    disabled={pendingAction !== null}
+                    className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
+                  >
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    1 мин
+                  </button>
+                </div>
+              ) : null}
 
               <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
                 <div
@@ -1031,23 +1471,43 @@ export default function HostControlPage() {
                   )}
                   Запустить раунд
                 </button>
-                <button
-                  type="button"
-                  data-testid="control-lock-voting"
-                  onClick={handleLockVoting}
-                  disabled={!canLock}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {pendingAction === 'lock' ? (
-                    <Loader2
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Lock className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  Остановить голосование
-                </button>
+                {selectedRound?.status === 'ACTIVE' ? (
+                  <button
+                    type="button"
+                    data-testid="control-lock-voting"
+                    onClick={handleLockVoting}
+                    disabled={!canLock}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/30 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {pendingAction === 'lock' ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Pause className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Остановить раунд
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="control-resume-round"
+                    onClick={handleResumeRound}
+                    disabled={!canResume}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {pendingAction === 'resume' ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Play className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Продолжить раунд
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="control-reveal-bottle"
@@ -1063,7 +1523,36 @@ export default function HostControlPage() {
                   ) : (
                     <Eye className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Раскрыть карту
+                  {event.mode === 'OPEN'
+                    ? 'Завершить голосование'
+                    : 'Раскрыть карту'}
+                </button>
+              </div>
+
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  data-testid="control-restart-round-secondary"
+                  onClick={() =>
+                    selectedRound && setRestartTarget(selectedRound)
+                  }
+                  disabled={!canRestart}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                  Начать раунд заново
+                </button>
+                <button
+                  type="button"
+                  data-testid="control-skip-round"
+                  onClick={() =>
+                    selectedRound && setSkipTarget(selectedRound)
+                  }
+                  disabled={!canSkip}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <SkipForward className="h-4 w-4" aria-hidden="true" />
+                  Пропустить вино
                 </button>
               </div>
 
@@ -1097,12 +1586,13 @@ export default function HostControlPage() {
           )}
         </section>
 
-        <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                Экспорт
-              </p>
+        {eventIsFinished ? (
+          <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                  Экспорт
+                </p>
               <h2 className="mt-1 text-lg font-semibold text-white">
                 Народный винный рейтинг
               </h2>
@@ -1129,9 +1619,10 @@ export default function HostControlPage() {
               {exporting
                 ? 'Выгружаем…'
                 : 'Выгрузить в Народный рейтинг'}
-            </button>
-          </div>
-        </section>
+              </button>
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <Modal
@@ -1221,6 +1712,67 @@ export default function HostControlPage() {
         result={exportResult}
         eventId={eventId}
       />
+
+      <Modal
+        open={restartTarget !== null}
+        onClose={() => setRestartTarget(null)}
+        title="Начать раунд заново"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Начать голосование по этому образцу заново? Все текущие
+          оценки этого вина будут сброшены.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setRestartTarget(null)}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-restart-confirm"
+            onClick={handleRestartRound}
+            disabled={pendingAction !== null}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            Начать заново
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={skipTarget !== null}
+        onClose={() => setSkipTarget(null)}
+        title="Пропустить вино"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Вы точно уверены, что хотите пропустить это вино?
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setSkipTarget(null)}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-skip-confirm"
+            onClick={handleSkipRound}
+            disabled={pendingAction !== null}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-500 px-5 text-sm font-semibold text-stone-950 transition hover:bg-amber-400 disabled:opacity-50"
+          >
+            <SkipForward className="h-4 w-4" aria-hidden="true" />
+            Да, пропустить
+          </button>
+        </div>
+      </Modal>
 
       <Toast
         message={toast?.message ?? null}

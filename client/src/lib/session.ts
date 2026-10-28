@@ -387,6 +387,10 @@ export function setStoredRating(
   writeJson(`${RATING_PREFIX}${roundId}`, rating);
 }
 
+export function clearStoredRating(roundId: string): void {
+  removeKey(`${RATING_PREFIX}${roundId}`);
+}
+
 export function getStoredFormDraft(
   roundId: string,
 ): GuestRoundFormDraft | null {
@@ -414,6 +418,10 @@ export function setStoredFormDraft(
   draft: GuestRoundFormDraft,
 ): void {
   writeJson(`${FORM_DRAFT_PREFIX}${roundId}`, draft);
+}
+
+export function clearStoredFormDraft(roundId: string): void {
+  removeKey(`${FORM_DRAFT_PREFIX}${roundId}`);
 }
 
 export function restoreFormForRound(

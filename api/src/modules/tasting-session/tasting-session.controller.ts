@@ -2,8 +2,11 @@ import {
   BadRequestException,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
+  Post,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -17,6 +20,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface';
 import { LiveStateAccessGuard } from './guards/live-state-access.guard';
 import type { LiveStateRequest } from './interfaces/tasting-session.interfaces';
 import { LiveStateResponseDto } from './dto/live-state-response.dto';
@@ -81,5 +86,42 @@ export class TastingSessionController {
     }
 
     return this.tastingSessionService.getLiveState(id, viewer);
+  }
+
+  @Post(':id/finish')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('host-jwt')
+  @ApiOperation({
+    summary: 'Завершить дегустацию',
+    description:
+      'Доступно после того, как все раунды раскрыты или пропущены. ' +
+      'Освобождает организатора и синхронизирует экран завершения.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Дегустация завершена',
+  })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  @ApiResponse({
+    status: 409,
+    description: 'Не все раунды раскрыты или пропущены',
+  })
+  async finish(
+    @Param('id', eventIdPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<{ eventId: string; status: string }> {
+    const event = await this.tastingSessionService.finishEvent(
+      id,
+      request.user.sub,
+    );
+
+    return { eventId: event.id, status: event.status };
   }
 }

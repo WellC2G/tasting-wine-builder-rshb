@@ -2,7 +2,10 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -24,6 +27,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { EventRoundResponseDto } from './dto/event-round-response.dto';
 import { EventSummaryResponseDto } from './dto/event-summary-response.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 import { UpdateEventStatusDto } from './dto/update-event-status.dto';
 import { EventsService } from './events.service';
 
@@ -130,6 +134,90 @@ export class EventsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<EventResponseDto> {
     return this.eventsService.findOneForHost(id, request.user.sub);
+  }
+
+  @Patch(':id')
+  @ApiOperation({
+    summary: 'Редактировать черновик мероприятия',
+    description:
+      'Обновляет название, режим, шкалу, дату и полностью заменяет список раундов. ' +
+      'Доступно только для черновиков.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Мероприятие обновлено',
+    type: EventResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Ошибка валидации данных' })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  @ApiResponse({
+    status: 409,
+    description: 'Редактировать можно только черновики',
+  })
+  update(
+    @Param('id', eventIdPipe) id: string,
+    @Body() dto: UpdateEventDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<EventResponseDto> {
+    return this.eventsService.update(id, request.user.sub, dto);
+  }
+
+  @Post(':id/copy')
+  @ApiOperation({
+    summary: 'Скопировать мероприятие',
+    description:
+      'Создаёт новый черновик с копией раундов, новым PIN-кодом и без участников.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор исходного мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Копия создана',
+    type: EventResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  copy(
+    @Param('id', eventIdPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<EventResponseDto> {
+    return this.eventsService.copy(id, request.user.sub);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить мероприятие',
+    description:
+      'Удаляет завершённое или черновое мероприятие вместе с раундами, ' +
+      'участниками, оценками и журналами экспорта.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({ status: 204, description: 'Мероприятие удалено' })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  @ApiResponse({
+    status: 409,
+    description: 'Нельзя удалить запущенную дегустацию',
+  })
+  remove(
+    @Param('id', eventIdPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.eventsService.remove(id, request.user.sub);
   }
 
   @Patch(':id/status')

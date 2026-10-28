@@ -190,6 +190,8 @@ export interface CreateEventInput {
   rounds: CreateRoundInput[];
 }
 
+export type UpdateEventInput = Partial<CreateEventInput>;
+
 export interface GuestJoinInput {
   sessionPin: string;
   nickname: string;

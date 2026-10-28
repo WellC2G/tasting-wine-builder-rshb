@@ -17,6 +17,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { EventRoundResponseDto } from './dto/event-round-response.dto';
 import { EventSummaryResponseDto } from './dto/event-summary-response.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 import { UpdateEventStatusDto } from './dto/update-event-status.dto';
 import {
   ScaleType,
@@ -57,8 +58,11 @@ export class EventsService {
     dto: CreateEventDto,
     hostId: string,
   ): Promise<EventResponseDto> {
-    this.assertUniqueOrderNumbers(dto);
-    await this.assertWinesExist(dto.rounds.map((round) => round.wineId));
+    this.assertUniqueOrderNumbers(dto.rounds);
+    const wines = await this.assertWinesExist(
+      dto.rounds.map((round) => round.wineId),
+    );
+    const mode = dto.mode ?? TastingMode.BLIND;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const sessionPin = await this.generateUniqueSessionPin();
@@ -67,7 +71,7 @@ export class EventsService {
         hostId,
         title: dto.title,
         sessionPin,
-        mode: dto.mode ?? TastingMode.BLIND,
+        mode,
         scaleType: dto.scaleType ?? ScaleType.PARKER_100,
         status: TastingEventStatus.DRAFT,
         scheduledAt: dto.scheduledAt
@@ -77,8 +81,12 @@ export class EventsService {
           this.roundsRepository.create({
             wineId: round.wineId,
             orderNumber: round.orderNumber,
-            blindLabel:
-              round.blindLabel ?? `Образец №${round.orderNumber}`,
+            blindLabel: this.resolveBlindLabel(
+              round.blindLabel,
+              round.orderNumber,
+              mode,
+              wines.get(round.wineId),
+            ),
             durationSeconds: round.durationSeconds ?? 180,
             status: TastingRoundStatus.PENDING,
           }),
@@ -217,6 +225,177 @@ export class EventsService {
     return this.findOneForHost(event.id, hostId);
   }
 
+  async update(
+    id: string,
+    hostId: string,
+    dto: UpdateEventDto,
+  ): Promise<EventResponseDto> {
+    const existing = await this.eventsRepository.findOneBy({
+      id,
+      hostId,
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Мероприятие не найдено');
+    }
+
+    if (existing.status !== TastingEventStatus.DRAFT) {
+      throw new ConflictException(
+        'Редактировать можно только черновики мероприятий',
+      );
+    }
+
+    if (dto.rounds) {
+      this.assertUniqueOrderNumbers(dto.rounds);
+    }
+
+    const wines = dto.rounds
+      ? await this.assertWinesExist(
+          dto.rounds.map((round) => round.wineId),
+        )
+      : new Map<string, Wine>();
+
+    await this.eventsRepository.manager.transaction(
+      async (manager) => {
+        const event = await manager.findOne(TastingEvent, {
+          where: { id, hostId },
+          relations: { rounds: true },
+        });
+
+        if (!event) {
+          throw new NotFoundException('Мероприятие не найдено');
+        }
+
+        if (event.status !== TastingEventStatus.DRAFT) {
+          throw new ConflictException(
+            'Редактировать можно только черновики мероприятий',
+          );
+        }
+
+        const nextMode = dto.mode ?? event.mode;
+        const updates: Partial<TastingEvent> = {};
+
+        if (dto.title !== undefined) {
+          updates.title = dto.title;
+        }
+        if (dto.mode !== undefined) {
+          updates.mode = dto.mode;
+        }
+        if (dto.scaleType !== undefined) {
+          updates.scaleType = dto.scaleType;
+        }
+        if (dto.scheduledAt !== undefined) {
+          updates.scheduledAt = dto.scheduledAt
+            ? new Date(dto.scheduledAt)
+            : null;
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await manager.update(TastingEvent, { id }, updates);
+        }
+
+        if (dto.rounds) {
+          await manager.delete(TastingRound, { eventId: id });
+          const rounds = dto.rounds.map((round) =>
+            manager.create(TastingRound, {
+              eventId: id,
+              wineId: round.wineId,
+              orderNumber: round.orderNumber,
+              blindLabel: this.resolveBlindLabel(
+                round.blindLabel,
+                round.orderNumber,
+                nextMode,
+                wines.get(round.wineId),
+              ),
+              durationSeconds: round.durationSeconds ?? 180,
+              status: TastingRoundStatus.PENDING,
+              startedAt: null,
+              revealedAt: null,
+            }),
+          );
+          await manager.save(rounds);
+        }
+      },
+    );
+
+    return this.findOneForHost(id, hostId);
+  }
+
+  async copy(id: string, hostId: string): Promise<EventResponseDto> {
+    const source = await this.eventsRepository.findOne({
+      where: { id, hostId },
+      relations: { rounds: true },
+    });
+
+    if (!source) {
+      throw new NotFoundException('Мероприятие не найдено');
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const sessionPin = await this.generateUniqueSessionPin();
+      const copy = this.eventsRepository.create({
+        hostId,
+        title: `${source.title} (копия)`,
+        sessionPin,
+        mode: source.mode,
+        scaleType: source.scaleType,
+        status: TastingEventStatus.DRAFT,
+        scheduledAt: source.scheduledAt,
+        rounds: source.rounds.map((round) =>
+          this.roundsRepository.create({
+            wineId: round.wineId,
+            orderNumber: round.orderNumber,
+            blindLabel: round.blindLabel,
+            durationSeconds: round.durationSeconds,
+            status: TastingRoundStatus.PENDING,
+            startedAt: null,
+            revealedAt: null,
+          }),
+        ),
+      });
+
+      try {
+        const saved = await this.eventsRepository.save(copy);
+        return this.findOneForHost(saved.id, hostId);
+      } catch (error) {
+        if (
+          isUniqueViolation(
+            error,
+            'uq_tasting_events_session_pin',
+          ) &&
+          attempt < 2
+        ) {
+          continue;
+        }
+
+        throw error;
+      }
+    }
+
+    throw new ConflictException(
+      'Не удалось сгенерировать уникальный PIN-код сессии. Попробуйте ещё раз.',
+    );
+  }
+
+  async remove(id: string, hostId: string): Promise<void> {
+    const event = await this.eventsRepository.findOneBy({
+      id,
+      hostId,
+    });
+
+    if (!event) {
+      throw new NotFoundException('Мероприятие не найдено');
+    }
+
+    if (event.status === TastingEventStatus.ACTIVE) {
+      throw new ConflictException(
+        'Нельзя удалить запущенную дегустацию. Сначала завершите её.',
+      );
+    }
+
+    await this.eventsRepository.delete({ id, hostId });
+  }
+
   async findRoundsForHost(
     id: string,
     hostId: string,
@@ -239,8 +418,10 @@ export class EventsService {
       .map((round) => EventRoundResponseDto.fromEntity(round));
   }
 
-  private assertUniqueOrderNumbers(dto: CreateEventDto): void {
-    const orderNumbers = dto.rounds.map((round) => round.orderNumber);
+  private assertUniqueOrderNumbers(
+    rounds: Array<{ orderNumber: number }>,
+  ): void {
+    const orderNumbers = rounds.map((round) => round.orderNumber);
 
     if (new Set(orderNumbers).size !== orderNumbers.length) {
       throw new BadRequestException(
@@ -249,24 +430,45 @@ export class EventsService {
     }
   }
 
-  private async assertWinesExist(wineIds: string[]): Promise<void> {
+  private resolveBlindLabel(
+    requestedLabel: string | undefined,
+    orderNumber: number,
+    mode: TastingMode,
+    wine: Wine | undefined,
+  ): string {
+    const explicitLabel = requestedLabel?.trim();
+
+    if (explicitLabel) {
+      return explicitLabel;
+    }
+
+    if (mode === TastingMode.OPEN && wine) {
+      return wine.name;
+    }
+
+    return `Образец №${orderNumber}`;
+  }
+
+  private async assertWinesExist(
+    wineIds: string[],
+  ): Promise<Map<string, Wine>> {
     const uniqueWineIds = [...new Set(wineIds)];
     const wines = await this.winesRepository.findBy({
       id: In(uniqueWineIds),
     });
 
-    if (wines.length === uniqueWineIds.length) {
-      return;
+    if (wines.length !== uniqueWineIds.length) {
+      const foundIds = new Set(wines.map((wine) => wine.id));
+      const missingIds = uniqueWineIds.filter(
+        (wineId) => !foundIds.has(wineId),
+      );
+
+      throw new BadRequestException(
+        `Не найдены вина с идентификаторами: ${missingIds.join(', ')}`,
+      );
     }
 
-    const foundIds = new Set(wines.map((wine) => wine.id));
-    const missingIds = uniqueWineIds.filter(
-      (wineId) => !foundIds.has(wineId),
-    );
-
-    throw new BadRequestException(
-      `Не найдены вина с идентификаторами: ${missingIds.join(', ')}`,
-    );
+    return new Map(wines.map((wine) => [wine.id, wine]));
   }
 
   private async generateUniqueSessionPin(): Promise<string> {

@@ -16,6 +16,7 @@ import type {
   PaginatedWines,
   RatingResponse,
   RoundStats,
+  UpdateEventInput,
   Wine,
   WineInput,
   WineType,
@@ -142,7 +143,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'PUT';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   body?: unknown;
   guestToken?: string;
   hostToken?: string;
@@ -350,6 +351,28 @@ export const apiClient = {
       return request<EventDetail>('/api/v1/events', {
         method: 'POST',
         body: input,
+      });
+    },
+
+    update(
+      eventId: string,
+      input: UpdateEventInput,
+    ): Promise<EventDetail> {
+      return request<EventDetail>(`/api/v1/events/${eventId}`, {
+        method: 'PATCH',
+        body: input,
+      });
+    },
+
+    copy(eventId: string): Promise<EventDetail> {
+      return request<EventDetail>(`/api/v1/events/${eventId}/copy`, {
+        method: 'POST',
+      });
+    },
+
+    remove(eventId: string): Promise<void> {
+      return request<void>(`/api/v1/events/${eventId}`, {
+        method: 'DELETE',
       });
     },
 

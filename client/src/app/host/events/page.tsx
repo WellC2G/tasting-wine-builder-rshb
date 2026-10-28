@@ -7,6 +7,7 @@ import {
   CalendarDays,
   ChevronDown,
   ChevronUp,
+  Copy,
   Download,
   Hash,
   Loader2,
@@ -62,8 +63,12 @@ interface PickedRound {
   labelIsAuto: boolean;
 }
 
-function defaultLabel(index: number): string {
-  return `Образец №${index + 1}`;
+function autoRoundLabel(
+  wine: Wine,
+  index: number,
+  mode: TastingMode,
+): string {
+  return mode === 'OPEN' ? wine.name : `Образец №${index + 1}`;
 }
 
 export default function HostEventsPage() {
@@ -75,6 +80,9 @@ export default function HostEventsPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingEventId, setEditingEventId] = useState<string | null>(
+    null,
+  );
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<TastingMode>('BLIND');
   const [scaleType, setScaleType] =
@@ -99,6 +107,13 @@ export default function HostEventsPage() {
   const [exportEventId, setExportEventId] = useState<string | null>(
     null,
   );
+  const [copyingEventId, setCopyingEventId] = useState<string | null>(
+    null,
+  );
+  const [deleteTarget, setDeleteTarget] = useState<EventSummary | null>(
+    null,
+  );
+  const [deleting, setDeleting] = useState(false);
 
   const loadEvents = async (isRefresh = false) => {
     if (isRefresh) {
@@ -111,7 +126,16 @@ export default function HostEventsPage() {
 
     try {
       const data = await apiClient.events.list();
-      setEvents(data);
+      const activeEvent = data.find(
+        (event) => event.status === 'ACTIVE',
+      );
+
+      if (activeEvent) {
+        router.replace(`/host/events/${activeEvent.id}/control`);
+        return;
+      }
+
+      setEvents(data.filter((event) => event.status !== 'ACTIVE'));
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearHostSession();
@@ -136,6 +160,7 @@ export default function HostEventsPage() {
   }, [ready, token]);
 
   const openCreateModal = () => {
+    setEditingEventId(null);
     setTitle('');
     setMode('BLIND');
     setScaleType('PARKER_100');
@@ -143,6 +168,99 @@ export default function HostEventsPage() {
     setWineSearch('');
     setCreateError(null);
     setCreateOpen(true);
+  };
+
+  const openEditEvent = async (event: EventSummary) => {
+    setCreateError(null);
+    setWineSearch('');
+
+    try {
+      const detail = await apiClient.events.get(event.id);
+
+      setEditingEventId(detail.id);
+      setTitle(detail.title);
+      setMode(detail.mode);
+      setScaleType(detail.scaleType);
+      setRounds(
+        detail.rounds.map((round, index) => ({
+          key: round.id,
+          wine: round.wine,
+          blindLabel: round.blindLabel,
+          durationSeconds: round.durationSeconds,
+          labelIsAuto:
+            round.blindLabel ===
+            autoRoundLabel(round.wine, index, detail.mode),
+        })),
+      );
+      setCreateOpen(true);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.replace('/host/login');
+        return;
+      }
+
+      setToast(getApiErrorMessage(error));
+    }
+  };
+
+  const handleModeChange = (nextMode: TastingMode) => {
+    setMode(nextMode);
+    setRounds((current) =>
+      current.map((round, index) => ({
+        ...round,
+        blindLabel: round.labelIsAuto
+          ? autoRoundLabel(round.wine, index, nextMode)
+          : round.blindLabel,
+      })),
+    );
+  };
+
+  const handleCopy = async (event: EventSummary) => {
+    setCopyingEventId(event.id);
+
+    try {
+      const copy = await apiClient.events.copy(event.id);
+      setEvents((current) => [copy, ...current]);
+      setToast('Копия мероприятия создана');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.replace('/host/login');
+        return;
+      }
+
+      setToast(getApiErrorMessage(error));
+    } finally {
+      setCopyingEventId(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    setDeleting(true);
+
+    try {
+      await apiClient.events.remove(deleteTarget.id);
+      setEvents((current) =>
+        current.filter((event) => event.id !== deleteTarget.id),
+      );
+      setDeleteTarget(null);
+      setToast('Мероприятие удалено');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.replace('/host/login');
+        return;
+      }
+
+      setToast(getApiErrorMessage(error));
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const openCatalogModal = () => {
@@ -171,9 +289,15 @@ export default function HostEventsPage() {
         : [...current, savedWine];
     });
     setRounds((current) =>
-      current.map((round) =>
+      current.map((round, index) =>
         round.wine.id === savedWine.id
-          ? { ...round, wine: savedWine }
+          ? {
+              ...round,
+              wine: savedWine,
+              blindLabel: round.labelIsAuto
+                ? autoRoundLabel(savedWine, index, mode)
+                : round.blindLabel,
+            }
           : round,
       ),
     );
@@ -241,7 +365,7 @@ export default function HostEventsPage() {
       {
         key: `${wine.id}-${Date.now()}`,
         wine,
-        blindLabel: defaultLabel(current.length),
+        blindLabel: autoRoundLabel(wine, current.length, mode),
         durationSeconds: 180,
         labelIsAuto: true,
       },
@@ -278,7 +402,7 @@ export default function HostEventsPage() {
       return next.map((round, position) => ({
         ...round,
         blindLabel: round.labelIsAuto
-          ? defaultLabel(position)
+          ? autoRoundLabel(round.wine, position, mode)
           : round.blindLabel,
       }));
     });
@@ -291,7 +415,7 @@ export default function HostEventsPage() {
         .map((round, position) => ({
           ...round,
           blindLabel: round.labelIsAuto
-            ? defaultLabel(position)
+            ? autoRoundLabel(round.wine, position, mode)
             : round.blindLabel,
         })),
     );
@@ -316,7 +440,7 @@ export default function HostEventsPage() {
     setCreating(true);
 
     try {
-      const created = await apiClient.events.create({
+      const input = {
         title: title.trim(),
         mode,
         scaleType,
@@ -324,17 +448,36 @@ export default function HostEventsPage() {
           wineId: round.wine.id,
           orderNumber: index + 1,
           blindLabel:
-            round.blindLabel.trim() || defaultLabel(index),
+            round.blindLabel.trim() ||
+            autoRoundLabel(round.wine, index, mode),
           durationSeconds: Math.min(
             3600,
             Math.max(30, Math.round(round.durationSeconds) || 180),
           ),
         })),
-      });
+      };
+      const saved = editingEventId
+        ? await apiClient.events.update(editingEventId, input)
+        : await apiClient.events.create(input);
 
+      setEvents((current) =>
+        editingEventId
+          ? current.map((event) =>
+              event.id === saved.id ? saved : event,
+            )
+          : [saved, ...current],
+      );
       setCreateOpen(false);
-      setToast('Дегустация создана');
-      router.push(`/host/events/${created.id}/control`);
+      setEditingEventId(null);
+      setToast(
+        editingEventId
+          ? 'Мероприятие обновлено'
+          : 'Дегустация создана',
+      );
+
+      if (!editingEventId) {
+        router.push(`/host/events/${saved.id}/control`);
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         clearHostSession();
@@ -507,7 +650,7 @@ export default function HostEventsPage() {
             {events.map((event) => (
               <article
                 key={event.id}
-                className="flex flex-col rounded-3xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-wine-500/30"
+                className="flex flex-col justify-between rounded-3xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-wine-500/30"
               >
                 <div className="flex items-start justify-between gap-3">
                   <span
@@ -553,54 +696,91 @@ export default function HostEventsPage() {
                     {event.connectedParticipantCount} в сети
                   </span>
                 </div>
-                <div className="mt-6 grid grid-cols-2 gap-2">
-                  <Link
-                    href={`/host/events/${event.id}/control`}
-                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-stone-950 transition hover:bg-stone-200"
-                  >
-                    <SlidersHorizontal
-                      className="h-4 w-4"
-                      aria-hidden="true"
-                    />
-                    {event.status === 'FINISHED' ||
-                    event.status === 'EXPORTED'
-                      ? 'Просмотр статистики'
-                      : 'Пульт'}
-                  </Link>
-                  <Link
-                    href={`/host/events/${event.id}/screen`}
-                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-stone-200 transition hover:bg-white/5"
-                  >
-                    <Monitor
-                      className="h-4 w-4"
-                      aria-hidden="true"
-                    />
-                    Экран
-                  </Link>
-                </div>
-
-                {event.status === 'FINISHED' ||
-                event.status === 'EXPORTED' ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleExport(event)}
-                    disabled={exportingEventId === event.id}
-                    className="mt-2 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-wine-400/30 bg-wine-500/10 px-3 text-sm font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50"
-                  >
-                    {exportingEventId === event.id ? (
-                      <Loader2
-                        className="h-4 w-4 animate-spin"
-                        aria-hidden="true"
-                      />
-                    ) : (
-                      <Download
+                <div className="mt-auto pt-5">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Link
+                      href={`/host/events/${event.id}/control`}
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-stone-950 transition hover:bg-stone-200"
+                    >
+                      <SlidersHorizontal
                         className="h-4 w-4"
                         aria-hidden="true"
                       />
+                      {event.status === 'DRAFT'
+                        ? 'Пульт'
+                        : 'Просмотр статистики'}
+                    </Link>
+                    <Link
+                      href={`/host/events/${event.id}/screen`}
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-stone-200 transition hover:bg-white/5"
+                    >
+                      <Monitor
+                        className="h-4 w-4"
+                        aria-hidden="true"
+                      />
+                      Экран
+                    </Link>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {event.status === 'DRAFT' ? (
+                      <button
+                        type="button"
+                        onClick={() => void openEditEvent(event)}
+                        className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 px-2 text-[11px] font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+                      >
+                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        Редактировать
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => void handleExport(event)}
+                        disabled={exportingEventId === event.id}
+                        className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-wine-400/30 bg-wine-500/10 px-2 text-[11px] font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50"
+                      >
+                        {exportingEventId === event.id ? (
+                          <Loader2
+                            className="h-3.5 w-3.5 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <Download
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
+                        )}
+                        Выгрузить в Народный рейтинг
+                      </button>
                     )}
-                    Выгрузить в Народный рейтинг
-                  </button>
-                ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => void handleCopy(event)}
+                      disabled={copyingEventId === event.id}
+                      className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 px-2 text-[11px] font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                    >
+                      {copyingEventId === event.id ? (
+                        <Loader2
+                          className="h-3.5 w-3.5 animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      Копировать
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDeleteTarget(event)}
+                      className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-400/20 px-2 text-[11px] font-medium text-rose-200 transition hover:bg-rose-400/10"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      Удалить
+                    </button>
+                  </div>
+                </div>
               </article>
             ))}
           </div>
@@ -609,8 +789,15 @@ export default function HostEventsPage() {
 
       <Modal
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Новая дегустация"
+        onClose={() => {
+          setCreateOpen(false);
+          setEditingEventId(null);
+        }}
+        title={
+          editingEventId
+            ? 'Редактировать дегустацию'
+            : 'Новая дегустация'
+        }
         size="lg"
       >
         <form onSubmit={handleCreate} className="space-y-6">
@@ -642,7 +829,7 @@ export default function HostEventsPage() {
                   <button
                     key={value}
                     type="button"
-                    onClick={() => setMode(value)}
+                    onClick={() => handleModeChange(value)}
                     className={cn(
                       'min-h-12 rounded-xl border px-3 text-sm font-medium transition',
                       mode === value
@@ -952,7 +1139,11 @@ export default function HostEventsPage() {
               ) : (
                 <Plus className="h-4 w-4" aria-hidden="true" />
               )}
-              {creating ? 'Создаём…' : 'Создать и открыть пульт'}
+              {creating
+                ? 'Сохраняем…'
+                : editingEventId
+                  ? 'Сохранить изменения'
+                  : 'Создать и открыть пульт'}
             </button>
           </div>
         </form>
@@ -1039,6 +1230,42 @@ export default function HostEventsPage() {
               ))
             )}
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={deleteTarget !== null}
+        onClose={() => setDeleteTarget(null)}
+        title="Удалить мероприятие"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          {'Вы точно уверены, что хотите удалить мероприятие «'}
+          {deleteTarget?.title ?? ''}
+          {'»?'}
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleting}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDelete()}
+            disabled={deleting}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+          >
+            {deleting ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            )}
+            Удалить мероприятие
+          </button>
         </div>
       </Modal>
 

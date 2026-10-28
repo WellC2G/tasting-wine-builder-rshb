@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { NetworkModule } from './common/network/network.module';
 import { buildTypeOrmOptions } from './database/database.config';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -17,6 +18,7 @@ import { TastingSessionModule } from './modules/tasting-session/tasting-session.
       isGlobal: true,
       envFilePath: ['.env', '../.env'],
     }),
+    NetworkModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: buildTypeOrmOptions,

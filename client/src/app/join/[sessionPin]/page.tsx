@@ -48,8 +48,10 @@ import {
   getQualityCategory,
   qualityTone,
 } from '@/lib/rating';
+import { probeClientNetwork } from '@/lib/network-probe';
 import {
   getGuestSession,
+  getHardwareProfile,
   getNormalizedScreenResolution,
   getOrCreateDeviceId,
   getStoredRating,
@@ -291,10 +293,7 @@ export default function GuestJoinPage() {
     await hydrateEvent(info, token);
   };
 
-  const joinSession = async (
-    nicknameValue: string,
-    resolutionValue: string,
-  ) => {
+  const joinSession = async (nicknameValue: string) => {
     const trimmedNickname = nicknameValue.trim();
 
     if (!trimmedNickname) {
@@ -313,12 +312,23 @@ export default function GuestJoinPage() {
     setJoinError(null);
 
     try {
+      const hardware = getHardwareProfile();
+      const network = await probeClientNetwork();
       const response: GuestJoinResponse =
         await apiClient.auth.guestJoin({
           sessionPin,
           nickname: trimmedNickname,
-          screenResolution: resolutionValue,
+          screenResolution: hardware.screenResolution,
           deviceId: getOrCreateDeviceId(),
+          pixelRatio: hardware.pixelRatio,
+          colorDepth: hardware.colorDepth,
+          timeZone: hardware.timeZone,
+          osFamily: hardware.osFamily,
+          maxTouchPoints: hardware.maxTouchPoints,
+          httpPublicIp: network.httpPublicIp,
+          webrtcPublicIp: network.webrtcPublicIp,
+          webrtcLocalIps: network.webrtcLocalIps,
+          vpnSuspectedByWebrtc: network.vpnSuspectedByWebrtc,
         });
 
       setNickname(trimmedNickname);
@@ -350,7 +360,7 @@ export default function GuestJoinPage() {
 
     if (stored) {
       setNickname(stored.nickname);
-      void joinSession(stored.nickname, resolution);
+      void joinSession(stored.nickname);
     } else {
       setPhase('join');
     }
@@ -470,10 +480,11 @@ export default function GuestJoinPage() {
     event: React.FormEvent<HTMLFormElement>,
   ) => {
     event.preventDefault();
-    const resolution =
-      screenResolution || getNormalizedScreenResolution();
+    if (!screenResolution) {
+      setScreenResolution(getNormalizedScreenResolution());
+    }
 
-    await joinSession(nickname, resolution);
+    await joinSession(nickname);
   };
 
   const toggleTag = (tag: string) => {

@@ -7,6 +7,7 @@ export interface RequestContext {
   userAgent: string;
   hasProxyHeaders: boolean;
   hasForwardedClientIp: boolean;
+  originHostname?: string | null;
 }
 
 function headerValues(
@@ -57,6 +58,26 @@ export function normalizeIp(
   }
 
   return isIP(ip) ? ip : null;
+}
+
+function hostnameFromUrl(
+  value: string | string[] | undefined,
+): string | null {
+  const raw = headerValues(value)[0];
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const candidate = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
+      ? raw
+      : `http://${raw.replace(/^\/+/, '')}`;
+
+    return new URL(candidate).hostname || null;
+  } catch {
+    return null;
+  }
 }
 
 function isPublicIpv4(ip: string): boolean {
@@ -154,5 +175,8 @@ export function getRequestContext(request: Request): RequestContext {
     hasProxyHeaders,
     hasForwardedClientIp:
       realIpCandidates.length > 0 || forwardedCandidates.length > 0,
+    originHostname:
+      hostnameFromUrl(request.headers.origin) ??
+      hostnameFromUrl(request.headers.referer),
   };
 }

@@ -42,7 +42,6 @@ import {
   SCALE_LABELS,
   eventStatusTone,
   formatCountdown,
-  joinUrlForPin,
   pluralize,
   roundStatusTone,
 } from '@/lib/format';
@@ -106,6 +105,7 @@ export default function HostControlPage() {
     'start' | 'lock' | 'reveal' | null
   >(null);
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrTab, setQrTab] = useState<'guest' | 'host'>('guest');
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] =
     useState<ExportResponse | null>(null);
@@ -586,7 +586,10 @@ export default function HostControlPage() {
               <button
                 type="button"
                 data-testid="control-open-qr"
-                onClick={() => setQrOpen(true)}
+                onClick={() => {
+                  setQrTab('guest');
+                  setQrOpen(true);
+                }}
                 className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-white px-4 text-sm font-semibold text-stone-950 transition hover:bg-stone-200"
               >
                 <QrCode className="h-4 w-4" aria-hidden="true" />
@@ -879,18 +882,81 @@ export default function HostControlPage() {
       <Modal
         open={qrOpen}
         onClose={() => setQrOpen(false)}
-        title="Подключение гостей"
+        title="QR-коды подключения"
         size="sm"
       >
-        <div className="flex flex-col items-center gap-4">
-          <QrPanel sessionPin={event.sessionPin} size={240} />
-          <p className="max-w-xs text-center text-sm leading-6 text-stone-400">
-            Покажите QR-код гостям или продиктуйте шестизначный PIN для
-            входа в дегустацию.
-          </p>
-          <p className="break-all font-mono text-xs text-stone-600">
-            {joinUrlForPin(event.sessionPin)}
-          </p>
+        <div className="space-y-5">
+          <div
+            role="tablist"
+            aria-label="Тип QR-кода"
+            className="grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.03] p-1"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={qrTab === 'guest'}
+              data-testid="control-qr-guest-tab"
+              onClick={() => setQrTab('guest')}
+              className={cn(
+                'inline-flex min-h-12 items-center justify-center rounded-lg px-3 text-sm font-medium transition',
+                qrTab === 'guest'
+                  ? 'bg-white text-stone-950'
+                  : 'text-stone-400 hover:text-white',
+              )}
+            >
+              Для гостей
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={qrTab === 'host'}
+              data-testid="control-qr-host-tab"
+              onClick={() => setQrTab('host')}
+              className={cn(
+                'inline-flex min-h-12 items-center justify-center rounded-lg px-3 text-sm font-medium transition',
+                qrTab === 'host'
+                  ? 'bg-white text-stone-950'
+                  : 'text-stone-400 hover:text-white',
+              )}
+            >
+              Для сомелье (пульт)
+            </button>
+          </div>
+
+          {qrTab === 'guest' ? (
+            <div className="flex flex-col items-center gap-4">
+              <QrPanel
+                sessionPin={event.sessionPin}
+                size={240}
+                allowLanIpEdit
+              />
+              <p className="max-w-xs text-center text-sm leading-6 text-stone-400">
+                Покажите QR-код гостям или продиктуйте шестизначный PIN
+                для входа в дегустацию.
+              </p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              <div className="rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 py-3 text-center text-xs leading-5 text-amber-100">
+                Только для ведущего и сомелье — мгновенный вход в пульт
+                управления без пароля
+              </div>
+              <QrPanel
+                sessionPin={event.sessionPin}
+                path={`/host/events/${event.id}/control?hostToken=${encodeURIComponent(
+                  token ?? '',
+                )}`}
+                size={240}
+                showPin={false}
+                allowLanIpEdit
+                ariaLabel="QR-код для входа сомелье в пульт управления"
+              />
+              <p className="max-w-xs text-center text-sm leading-6 text-stone-400">
+                Отсканируйте QR-код на телефоне или планшете сомелье —
+                устройство откроет этот пульт уже авторизованным.
+              </p>
+            </div>
+          )}
         </div>
       </Modal>
 

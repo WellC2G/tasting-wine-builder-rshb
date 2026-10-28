@@ -13,6 +13,7 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthService } from './services/auth.service';
 import { FingerprintService } from './services/fingerprint.service';
 import { HostSeederService } from './services/host-seeder.service';
+import { ServerPublicIpService } from './services/server-public-ip.service';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { HostSeederService } from './services/host-seeder.service';
     AuthService,
     FingerprintService,
     HostSeederService,
+    ServerPublicIpService,
     JwtAuthGuard,
   ],
   exports: [JwtAuthGuard, JwtModule],

@@ -1,5 +1,6 @@
 import type {
   HostUser,
+  OsFamily,
   RatingResponse,
 } from '@/types/api';
 
@@ -17,6 +18,15 @@ export interface GuestSession {
   token: string;
   nickname: string;
   participantId: string;
+}
+
+export interface HardwareProfile {
+  screenResolution: string;
+  pixelRatio: number;
+  colorDepth: number;
+  timeZone: string;
+  osFamily: OsFamily;
+  maxTouchPoints: number;
 }
 
 function canUseStorage(): boolean {
@@ -161,6 +171,77 @@ export function getNormalizedScreenResolution(): string {
   return `${Math.min(width, height)}x${Math.max(width, height)}`;
 }
 
+export function detectOsFamily(): OsFamily {
+  if (typeof navigator === 'undefined') {
+    return 'Other';
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const maxTouchPoints = navigator.maxTouchPoints ?? 0;
+
+  if (userAgent.includes('android')) {
+    return 'Android';
+  }
+
+  if (
+    userAgent.includes('iphone') ||
+    userAgent.includes('ipad') ||
+    userAgent.includes('ipod')
+  ) {
+    return 'iOS';
+  }
+
+  if (userAgent.includes('windows')) {
+    return 'Windows';
+  }
+
+  if (
+    userAgent.includes('macintosh') ||
+    userAgent.includes('mac os x')
+  ) {
+    return maxTouchPoints > 1 ? 'iOS' : 'macOS';
+  }
+
+  if (userAgent.includes('linux')) {
+    return 'Linux';
+  }
+
+  return 'Other';
+}
+
+export function getHardwareProfile(): HardwareProfile {
+  if (typeof window === 'undefined') {
+    return {
+      screenResolution: FALLBACK_SCREEN_RESOLUTION,
+      pixelRatio: 1,
+      colorDepth: 24,
+      timeZone: 'UTC',
+      osFamily: 'Other',
+      maxTouchPoints: 0,
+    };
+  }
+
+  let timeZone = 'UTC';
+
+  try {
+    timeZone =
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    timeZone = 'UTC';
+  }
+
+  return {
+    screenResolution: getNormalizedScreenResolution(),
+    pixelRatio:
+      Math.round((window.devicePixelRatio || 1) * 100) / 100,
+    colorDepth: window.screen?.colorDepth || 24,
+    timeZone,
+    osFamily: detectOsFamily(),
+    maxTouchPoints:
+      (navigator.maxTouchPoints ?? 0) > 0 ? 1 : 0,
+  };
+}
+
 function readJson<T>(key: string): T | null {
   if (!canUseStorage()) {
     return null;
@@ -201,6 +282,14 @@ export function getHostToken(): string | null {
   }
 
   return window.localStorage.getItem(HOST_TOKEN_KEY);
+}
+
+export function setHostToken(token: string): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(HOST_TOKEN_KEY, token);
 }
 
 export function getHostUser(): HostUser | null {

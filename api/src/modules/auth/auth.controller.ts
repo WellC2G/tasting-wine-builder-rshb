@@ -1,12 +1,15 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
   Req,
+  UseGuards,
 } from '@nestjs/common';
 import {
+  ApiBearerAuth,
   ApiOperation,
   ApiResponse,
   ApiTags,
@@ -14,6 +17,8 @@ import {
 import type { Request } from 'express';
 
 import { getRequestContext } from '../../common/http/request-context';
+import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import type { AuthenticatedRequest } from './interfaces/authenticated-request.interface';
 import { AuthService } from './services/auth.service';
 import { AuthTokenResponseDto } from './dto/auth-token-response.dto';
 import { GuestJoinResponseDto } from './dto/guest-join-response.dto';
@@ -67,13 +72,36 @@ export class AuthController {
     return this.authService.login(dto);
   }
 
+  @Get('me')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('host-jwt')
+  @ApiOperation({
+    summary: 'Текущий организатор',
+    description:
+      'Возвращает профиль организатора по Bearer JWT. Используется ' +
+      'для мгновенного входа по QR-коду из пульта управления.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Профиль организатора',
+    type: UserResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  me(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<UserResponseDto> {
+    return this.authService.getCurrentUser(request.user.sub);
+  }
+
   @Post('guest-join')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Вход гостя по PIN-коду',
     description:
       'Создаёт или переиспользует анонимную гостевую сессию по SHA-256 ' +
-      'отпечатку устройства. В режиме BLIND метаданные вина не возвращаются.',
+      'отпечатку устройства и аппаратному профилю. Проверяет смену IP, ' +
+      'VPN, прокси и повторный вход из другого браузера на том же устройстве. ' +
+      'В режиме BLIND метаданные вина не возвращаются.',
   })
   @ApiResponse({
     status: 200,
@@ -86,8 +114,14 @@ export class AuthController {
     description: 'Сессия дегустации с таким PIN-кодом не найдена',
   })
   @ApiResponse({
+    status: 403,
+    description:
+      'Обнаружены VPN, прокси или смена IP-адреса устройства',
+  })
+  @ApiResponse({
     status: 409,
-    description: 'Сессия дегустации уже завершена',
+    description:
+      'Сессия завершена или с этого устройства уже выполнен вход',
   })
   guestJoin(
     @Body() dto: GuestJoinDto,

@@ -37,6 +37,9 @@ services:
       JWT_SECRET: ${JWT_SECRET:-change-me-jwt-secret-at-least-32-characters}
       SERVER_SALT: ${SERVER_SALT:-change-me-server-salt-for-guest-fingerprints}
       PEOPLES_RATING_WEBHOOK_URL: ${PEOPLES_RATING_WEBHOOK_URL:-http://127.0.0.1:4000/api/v1/mock/peoples-rating/batch}
+      HOST_LAN_IP: ${HOST_LAN_IP:-}
+      NEXT_PUBLIC_HOST_IP: ${NEXT_PUBLIC_HOST_IP:-}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
     ports:
       - "${API_PORT:-4000}:4000"
     depends_on:
@@ -59,6 +62,7 @@ services:
       # supplies an optional protocol/port hint (port defaults to 4000).
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_HOST_IP: ${NEXT_PUBLIC_HOST_IP:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production

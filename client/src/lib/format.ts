@@ -1,3 +1,4 @@
+import { getCachedQrOrigin } from './lan-ip';
 import type {
   EventStatus,
   ExportExternalStatus,
@@ -139,10 +140,19 @@ export function roundStatusTone(status: RoundStatus): string {
   }
 }
 
-export function joinUrlForPin(sessionPin: string): string {
+export function joinUrlForPin(
+  sessionPin: string,
+  baseOrigin?: string,
+): string {
   if (typeof window === 'undefined') {
     return `/join/${sessionPin}`;
   }
 
-  return `${window.location.origin}/join/${sessionPin}`;
+  const origin = baseOrigin ?? getCachedQrOrigin();
+
+  if (!origin) {
+    return `/join/${sessionPin}`;
+  }
+
+  return `${origin.replace(/\/+$/, '')}/join/${sessionPin}`;
 }

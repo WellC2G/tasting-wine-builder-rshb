@@ -12,6 +12,13 @@ export type WineType =
   | 'ROSE'
   | 'SPARKLING'
   | 'FORTIFIED';
+export type OsFamily =
+  | 'Windows'
+  | 'macOS'
+  | 'iOS'
+  | 'Android'
+  | 'Linux'
+  | 'Other';
 export type UserRole = 'HOST' | 'ADMIN';
 export type ParkerQualityCategory =
   | 'CLASSIC'
@@ -176,6 +183,19 @@ export interface GuestJoinInput {
   nickname: string;
   screenResolution: string;
   deviceId: string;
+  pixelRatio: number;
+  colorDepth: number;
+  timeZone: string;
+  osFamily: OsFamily;
+  maxTouchPoints: number;
+  httpPublicIp: string | null;
+  webrtcPublicIp: string | null;
+  webrtcLocalIps: string[];
+  vpnSuspectedByWebrtc: boolean;
+}
+
+export interface NetworkAddressResponse {
+  lanIp: string | null;
 }
 
 export interface ParkerBreakdown {

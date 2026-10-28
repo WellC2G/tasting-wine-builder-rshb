@@ -15,6 +15,7 @@ import { FindOptionsWhere, Repository } from 'typeorm';
 import { isUniqueViolation } from '../../../common/database/is-unique-violation';
 import {
   isSharedDockerGatewayIp,
+  normalizeIp,
   type RequestContext,
 } from '../../../common/http/request-context';
 import { WineResponseDto } from '../../catalog/dto/wine-response.dto';
@@ -29,8 +30,7 @@ import {
 } from '../../events/entities/tasting-round.entity';
 import {
   BCRYPT_SALT_ROUNDS,
-  GUEST_IP_CHANGED_MESSAGE,
-  GUEST_SAME_IP_CONFLICT_MESSAGE,
+  DEVICE_ALREADY_REGISTERED_MESSAGE,
   JWT_EXPIRES_IN_SECONDS,
   VPN_PROXY_FORBIDDEN_MESSAGE,
 } from '../auth.constants';
@@ -48,14 +48,15 @@ import { UserResponseDto } from '../dto/user-response.dto';
 import { Participant } from '../entities/participant.entity';
 import { User, UserRole } from '../entities/user.entity';
 import { FingerprintService } from './fingerprint.service';
+import { ServerPublicIpService } from './server-public-ip.service';
 
 interface FindOrCreateParticipantParams {
   eventId: string;
   nickname: string;
-  context: RequestContext;
   deviceId: string;
+  clientIp: string;
   fingerprintHash: string;
-  screenResolution: string;
+  environmentHash: string;
 }
 
 @Injectable()
@@ -69,6 +70,7 @@ export class AuthService {
     private readonly eventsRepository: Repository<TastingEvent>,
     private readonly jwtService: JwtService,
     private readonly fingerprintService: FingerprintService,
+    private readonly serverPublicIpService: ServerPublicIpService,
   ) {}
 
   async register(dto: RegisterDto): Promise<UserResponseDto> {
@@ -135,14 +137,20 @@ export class AuthService {
     };
   }
 
+  async getCurrentUser(userId: string): Promise<UserResponseDto> {
+    const user = await this.usersRepository.findOneBy({ id: userId });
+
+    if (!user) {
+      throw new UnauthorizedException('Пользователь не найден');
+    }
+
+    return UserResponseDto.fromEntity(user);
+  }
+
   async guestJoin(
     dto: GuestJoinDto,
     context: RequestContext,
   ): Promise<GuestJoinResponseDto> {
-    if (context.hasProxyHeaders) {
-      throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
-    }
-
     const event = await this.eventsRepository.findOne({
       where: { sessionPin: dto.sessionPin },
       relations: {
@@ -165,8 +173,34 @@ export class AuthService {
       throw new ConflictException('Сессия дегустации уже завершена');
     }
 
+    const serverPublicIp =
+      await this.serverPublicIpService.getPublicIp();
+    const clientIp = this.resolveEffectiveClientIp(
+      context.clientIp,
+      dto.webrtcLocalIps,
+    );
+    const vpnSuspected =
+      dto.vpnSuspectedByWebrtc === true ||
+      this.hasVpnInterface(
+        dto.webrtcLocalIps,
+        context.originHostname,
+      );
+
+    this.assertNoVpn(dto, context, serverPublicIp, clientIp, vpnSuspected);
+
+    const environmentHash =
+      this.fingerprintService.calculateEnvironmentHash({
+        osFamily: dto.osFamily ?? '',
+        userAgent: context.userAgent,
+        screenResolution: dto.screenResolution,
+        pixelRatio: dto.pixelRatio ?? 1,
+        colorDepth: dto.colorDepth ?? 24,
+        timeZone: dto.timeZone ?? 'UTC',
+        maxTouchPoints: dto.maxTouchPoints ?? 0,
+        eventId: event.id,
+      });
     const fingerprintHash = this.fingerprintService.calculate({
-      clientIp: context.clientIp,
+      clientIp,
       deviceId: dto.deviceId,
       userAgent: context.userAgent,
       screenResolution: dto.screenResolution,
@@ -176,10 +210,10 @@ export class AuthService {
     const participant = await this.findOrCreateParticipant({
       eventId: event.id,
       nickname: dto.nickname,
-      context,
       deviceId: dto.deviceId,
+      clientIp,
       fingerprintHash,
-      screenResolution: dto.screenResolution,
+      environmentHash,
     });
 
     const currentRound = this.selectCurrentRound(event.rounds);
@@ -205,74 +239,74 @@ export class AuthService {
     const {
       eventId,
       nickname,
-      context,
       deviceId,
+      clientIp,
       fingerprintHash,
-      screenResolution,
+      environmentHash,
     } = params;
-    const environmentHash =
-      this.fingerprintService.calculateEnvironmentHash({
-        userAgent: context.userAgent,
-        screenResolution,
-        eventId,
-      });
     const candidates = await this.findParticipantCandidates(
       eventId,
-      context.clientIp,
+      clientIp,
       deviceId,
       fingerprintHash,
+      environmentHash,
     );
-    const sameDeviceParticipants = candidates.filter(
+    const sameDevice = candidates.find(
       (participant) => participant.deviceId === deviceId,
     );
 
-    if (sameDeviceParticipants.length > 0) {
-      const sameDeviceWithSameIp = sameDeviceParticipants.find(
-        (participant) => participant.clientIp === context.clientIp,
-      );
+    if (sameDevice) {
+      const recordedIp = sameDevice.clientIp;
+      const ipChanged =
+        clientIp !== 'unknown' &&
+        recordedIp !== 'unknown' &&
+        recordedIp !== clientIp;
+      const isNatUpgrade =
+        this.isUpgradeableClientIp(recordedIp) &&
+        this.isClientLanIp(clientIp);
 
-      if (sameDeviceWithSameIp) {
-        return this.resumeParticipant(
-          sameDeviceWithSameIp,
-          nickname,
-          environmentHash,
-        );
-      }
-
-      if (context.clientIp !== 'unknown') {
-        throw new ForbiddenException(GUEST_IP_CHANGED_MESSAGE);
+      if (ipChanged && !isNatUpgrade) {
+        throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
       }
 
       return this.resumeParticipant(
-        sameDeviceParticipants[0],
+        sameDevice,
         nickname,
         environmentHash,
+        clientIp,
       );
     }
 
-    if (context.clientIp !== 'unknown') {
-      const sameIpParticipants = candidates.filter(
-        (participant) => participant.clientIp === context.clientIp,
+    const sameHardware = candidates.find(
+      (participant) =>
+        participant.environmentHash === environmentHash &&
+        participant.deviceId !== deviceId,
+    );
+
+    if (sameHardware) {
+      throw new ConflictException(DEVICE_ALREADY_REGISTERED_MESSAGE);
+    }
+
+    if (
+      clientIp !== 'unknown' &&
+      !isSharedDockerGatewayIp(clientIp)
+    ) {
+      const sameIpParticipant = candidates.find(
+        (participant) =>
+          participant.clientIp === clientIp &&
+          participant.deviceId !== deviceId,
       );
 
-      if (sameIpParticipants.length > 0) {
-        const usesSharedDockerGateway =
-          isSharedDockerGatewayIp(context.clientIp) &&
-          !context.hasForwardedClientIp;
-        const hasSameEnvironment = sameIpParticipants.some(
-          (participant) =>
-            participant.environmentHash === environmentHash,
+      if (sameIpParticipant) {
+        throw new ConflictException(
+          DEVICE_ALREADY_REGISTERED_MESSAGE,
         );
-
-        if (!usesSharedDockerGateway || hasSameEnvironment) {
-          throw new ConflictException(GUEST_SAME_IP_CONFLICT_MESSAGE);
-        }
       }
     }
 
     const participant = this.participantsRepository.create({
       eventId,
-      clientIp: context.clientIp,
+      clientIp,
       deviceId,
       environmentHash,
       fingerprintHash,
@@ -307,6 +341,7 @@ export class AuthService {
         concurrentlyCreated,
         nickname,
         environmentHash,
+        clientIp,
       );
     }
   }
@@ -316,13 +351,15 @@ export class AuthService {
     clientIp: string,
     deviceId: string,
     fingerprintHash: string,
+    environmentHash: string,
   ): Promise<Participant[]> {
     const where: FindOptionsWhere<Participant>[] = [
       { eventId, fingerprintHash },
       { eventId, deviceId },
+      { eventId, environmentHash },
     ];
 
-    if (clientIp !== 'unknown') {
+    if (clientIp !== 'unknown' && !isSharedDockerGatewayIp(clientIp)) {
       where.push({ eventId, clientIp });
     }
 
@@ -336,12 +373,149 @@ export class AuthService {
     participant: Participant,
     nickname: string,
     environmentHash: string,
+    clientIp: string,
   ): Promise<Participant> {
     participant.nickname = nickname;
     participant.isOnline = true;
     participant.environmentHash = environmentHash;
 
+    if (
+      clientIp !== 'unknown' &&
+      this.isUpgradeableClientIp(participant.clientIp) &&
+      this.isClientLanIp(clientIp)
+    ) {
+      participant.clientIp = clientIp;
+    }
+
     return this.participantsRepository.save(participant);
+  }
+
+  private resolveEffectiveClientIp(
+    currentIp: string,
+    webrtcLocalIps: string[] | undefined,
+  ): string {
+    const needsLanIp =
+      currentIp === 'unknown' ||
+      currentIp === '127.0.0.1' ||
+      isSharedDockerGatewayIp(currentIp);
+
+    if (!needsLanIp) {
+      return currentIp;
+    }
+
+    const lanIp = (webrtcLocalIps ?? [])
+      .map((value) => normalizeIp(value))
+      .find(
+        (value): value is string =>
+          value !== null && this.isClientLanIp(value),
+      );
+
+    return lanIp ?? currentIp;
+  }
+
+  private assertNoVpn(
+    dto: GuestJoinDto,
+    context: RequestContext,
+    serverPublicIp: string | null,
+    clientIp: string,
+    vpnSuspected: boolean,
+  ): void {
+    if (context.hasProxyHeaders) {
+      throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+    }
+
+    if (
+      dto.httpPublicIp &&
+      dto.webrtcPublicIp &&
+      dto.httpPublicIp !== dto.webrtcPublicIp
+    ) {
+      throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+    }
+
+    if (serverPublicIp) {
+      if (
+        dto.httpPublicIp &&
+        dto.httpPublicIp !== serverPublicIp
+      ) {
+        throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+      }
+
+      if (
+        dto.webrtcPublicIp &&
+        dto.webrtcPublicIp !== serverPublicIp
+      ) {
+        throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+      }
+
+      const isRemoteClient =
+        clientIp !== '127.0.0.1' && clientIp !== 'unknown';
+      const httpProbeMissing = !dto.httpPublicIp;
+      const webrtcMismatch =
+        httpProbeMissing &&
+        Boolean(dto.webrtcPublicIp) &&
+        dto.webrtcPublicIp !== serverPublicIp;
+
+      if (isRemoteClient && (webrtcMismatch || vpnSuspected)) {
+        throw new ForbiddenException(VPN_PROXY_FORBIDDEN_MESSAGE);
+      }
+    }
+  }
+
+  private hasVpnInterface(
+    webrtcLocalIps: string[] | undefined,
+    originHostname?: string | null,
+  ): boolean {
+    const originIsLocalLan =
+      originHostname?.startsWith('192.168.') ?? false;
+
+    return (webrtcLocalIps ?? []).some((value) => {
+      const ip = normalizeIp(value);
+
+      if (!ip || !ip.includes('.')) {
+        return false;
+      }
+
+      const [first, second] = ip.split('.').map(Number);
+
+      if (first === 100 && second >= 64 && second <= 127) {
+        return true;
+      }
+
+      return (
+        originIsLocalLan &&
+        (first === 10 ||
+          (first === 172 && second >= 16 && second <= 31))
+      );
+    });
+  }
+
+  private isClientLanIp(ip: string): boolean {
+    if (normalizeIp(ip) !== ip) {
+      return false;
+    }
+
+    const parts = ip.split('.').map(Number);
+
+    if (
+      parts.length !== 4 ||
+      parts.some((part) => !Number.isInteger(part))
+    ) {
+      return false;
+    }
+
+    return (
+      (parts[0] === 192 && parts[1] === 168) ||
+      parts[0] === 10 ||
+      (parts[0] === 172 && parts[1] >= 20 && parts[1] <= 31)
+    );
+  }
+
+  private isUpgradeableClientIp(ip: string): boolean {
+    return (
+      ip === 'unknown' ||
+      ip === '127.0.0.1' ||
+      isSharedDockerGatewayIp(ip)
+    );
   }
 
   private selectCurrentRound(

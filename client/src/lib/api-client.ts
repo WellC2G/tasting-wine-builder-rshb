@@ -12,6 +12,7 @@ import type {
   GuestJoinResponse,
   HostUser,
   LiveState,
+  NetworkAddressResponse,
   PaginatedWines,
   RatingResponse,
   RoundStats,
@@ -139,9 +140,10 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH';
+  method?: 'GET' | 'POST' | 'PATCH' | 'PUT';
   body?: unknown;
   guestToken?: string;
+  hostToken?: string;
   publicRequest?: boolean;
 }
 
@@ -179,7 +181,7 @@ async function request<T>(
   if (options.guestToken) {
     headers.set('X-Guest-Token', options.guestToken);
   } else if (!options.publicRequest) {
-    const hostToken = getHostToken();
+    const hostToken = options.hostToken ?? getHostToken();
 
     if (hostToken) {
       headers.set('Authorization', `Bearer ${hostToken}`);
@@ -281,6 +283,12 @@ export const apiClient = {
       });
     },
 
+    me(accessToken?: string): Promise<HostUser> {
+      return request<HostUser>('/api/v1/auth/me', {
+        hostToken: accessToken,
+      });
+    },
+
     guestJoin(
       input: GuestJoinInput,
     ): Promise<GuestJoinResponse> {
@@ -297,6 +305,23 @@ export const apiClient = {
       return request<PaginatedWines>(
         `/api/v1/wines?${catalogQuery(filters)}`,
       );
+    },
+  },
+
+  health: {
+    network(): Promise<NetworkAddressResponse> {
+      return request<NetworkAddressResponse>('/api/v1/health/network', {
+        publicRequest: true,
+      });
+    },
+
+    setNetworkLanIp(
+      lanIp: string,
+    ): Promise<NetworkAddressResponse> {
+      return request<NetworkAddressResponse>('/api/v1/health/network', {
+        method: 'PUT',
+        body: { lanIp },
+      });
     },
   },
 

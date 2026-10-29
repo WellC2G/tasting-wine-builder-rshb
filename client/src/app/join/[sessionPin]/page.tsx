@@ -1055,6 +1055,14 @@ export default function GuestJoinPage() {
   const liveTotal = calculateParkerTotal(parker);
   const liveCategory = getQualityCategory(liveTotal);
   const currentRoundNumber = currentRound?.orderNumber ?? 0;
+  const storedPersonalNotes =
+    ownRating?.personalNotes?.trim() ?? '';
+  const draftPersonalNotes =
+    !storedPersonalNotes && currentRound
+      ? restoreFormForRound(currentRound.roundId).notes.trim()
+      : '';
+  const revealedPersonalNotes =
+    storedPersonalNotes || draftPersonalNotes;
   const remainingSeconds =
     currentRound?.status === 'ACTIVE' && endsAt
       ? Math.max(0, Math.ceil((endsAt - now) / 1000))
@@ -1687,6 +1695,23 @@ export default function GuestJoinPage() {
                           · {storedRating.qualityLabel}
                         </p>
                       ) : null}
+
+                      {(() => {
+                        const notes =
+                          storedRating?.personalNotes?.trim() ||
+                          restoreFormForRound(item.roundId).notes.trim();
+
+                        return notes ? (
+                          <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+                            <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
+                              Ваши заметки
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-stone-300">
+                              {notes}
+                            </p>
+                          </div>
+                        ) : null;
+                      })()}
                     </article>
                   );
                 })}
@@ -1825,6 +1850,17 @@ export default function GuestJoinPage() {
                     </p>
                   )}
                 </section>
+
+                {revealedPersonalNotes ? (
+                  <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-stone-400">
+                      Ваши заметки о вине
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-stone-200">
+                      {revealedPersonalNotes}
+                    </p>
+                  </section>
+                ) : null}
               </>
             ) : (
               <div className="rounded-2xl border border-dashed border-white/10 p-6 text-center text-sm text-stone-500">

@@ -50,6 +50,9 @@ export class LiveStateRoundDto {
   })
   remainingSeconds!: number;
 
+  @ApiProperty({ example: false })
+  isWineRevealed!: boolean;
+
   @ApiPropertyOptional({
     type: WineResponseDto,
     description:

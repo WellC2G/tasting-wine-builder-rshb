@@ -539,6 +539,56 @@ export class TastingSessionGateway
     });
   }
 
+  @SubscribeMessage('host:finish_round')
+  async handleFinishRound(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRoundActionPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, round } =
+        await this.tastingSessionService.finishRound(
+          payload.eventId,
+          payload.roundId,
+          hostId,
+        );
+
+      const room = tastingRoom(event.id);
+      await socket.join(room);
+      const stats =
+        await this.outlierFilterService.filterAndAggregate(round.id);
+      const isWineRevealed =
+        event.mode === TastingMode.OPEN ||
+        round.revealedAt !== null;
+
+      this.server.to(room).emit('round_completed', {
+        roundId: round.id,
+        orderNumber: round.orderNumber,
+        blindLabel: round.blindLabel,
+        wine: isWineRevealed
+          ? this.toWineDetails(round.wine)
+          : null,
+        stats,
+        isWineRevealed,
+        message: 'Раунд завершён',
+      });
+
+      const counter =
+        await this.tastingSessionService.getParticipantCounter(
+          event.id,
+          round.id,
+        );
+
+      this.server
+        .to(room)
+        .emit('participant_counter_updated', counter);
+    });
+  }
+
   @SubscribeMessage('host:reveal_bottle')
   async handleRevealBottle(
     @ConnectedSocket() socket: TastingSocket,
@@ -570,6 +620,7 @@ export class TastingSessionGateway
         blindLabel: round.blindLabel,
         wine: this.toWineDetails(wine),
         stats,
+        isWineRevealed: true,
         message: BOTTLE_REVEALED_MESSAGE,
       });
 
@@ -619,13 +670,19 @@ export class TastingSessionGateway
       const room = tastingRoom(event.id);
       await socket.join(room);
       this.roomStateService.setLastViewedRound(event.id, round.id);
+      const isWineRevealed =
+        event.mode === TastingMode.OPEN ||
+        round.revealedAt !== null;
 
       this.server.to(room).emit('bottle_revealed', {
         roundId: round.id,
         orderNumber: round.orderNumber,
         blindLabel: round.blindLabel,
-        wine: this.toWineDetails(round.wine),
+        wine: isWineRevealed
+          ? this.toWineDetails(round.wine)
+          : null,
         stats,
+        isWineRevealed,
         message: STATS_OPENED_MESSAGE,
       });
 

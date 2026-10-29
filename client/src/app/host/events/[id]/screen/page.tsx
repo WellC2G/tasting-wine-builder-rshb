@@ -60,6 +60,7 @@ import type {
   EventFinishedPayload,
   EventStatusUpdatedPayload,
   ParticipantCounterPayload,
+  RoundCompletedPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
   RoundStatsUpdatedPayload,
@@ -337,7 +338,7 @@ function LiveView({
 
 interface StatsViewProps {
   round: LiveStateRound;
-  wine: RevealedWine;
+  wine: RevealedWine | null;
   stats: RoundStats;
 }
 
@@ -345,7 +346,10 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <p className="shrink-0 text-xs uppercase tracking-[0.24em] text-wine-300">
-        Образец раскрыт · {round.blindLabel}
+        {round.isWineRevealed
+          ? 'Образец раскрыт'
+          : 'Статистика раунда'}{' '}
+        · {round.blindLabel}
       </p>
 
       <div className="grid shrink-0 grid-cols-[1.15fr_0.85fr] items-stretch gap-6">
@@ -353,7 +357,31 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
           data-testid="screen-revealed-wine"
           className="flex h-full min-w-0 items-center"
         >
-          <WineDetailsCard wine={wine} large className="h-full w-full" />
+          {wine ? (
+            <WineDetailsCard wine={wine} large className="h-full w-full" />
+          ) : (
+            <div className="flex h-full w-full items-center gap-6 rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/60 via-stone-900/70 to-stone-950 p-8">
+              <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-3xl border border-wine-400/20 bg-wine-500/10 text-wine-300">
+                <WineIcon
+                  className="h-20 w-20"
+                  strokeWidth={1.1}
+                  aria-hidden="true"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs uppercase tracking-[0.2em] text-wine-300">
+                  Слепой образец
+                </p>
+                <h2 className="mt-3 text-5xl font-semibold leading-none tracking-tight text-white">
+                  {round.blindLabel}
+                </h2>
+                <p className="mt-4 text-lg leading-7 text-stone-400">
+                  Название, винодельня и винтаж будут раскрыты по
+                  команде сомелье.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex h-full flex-col justify-center rounded-3xl border border-wine-400/20 bg-wine-500/10 p-6">
@@ -729,6 +757,7 @@ export default function PresentationScreenPage() {
         startedAt: new Date().toISOString(),
         endsAt: payload.endsAt,
         remainingSeconds: payload.remainingSeconds,
+        isWineRevealed: Boolean(payload.wine),
       });
       setWine(payload.wine ?? null);
       setStats(null);
@@ -800,8 +829,8 @@ export default function PresentationScreenPage() {
       setEndsAt(null);
     };
 
-    const handleBottleRevealed = (
-      payload: BottleRevealedPayload,
+    const applyCompletedRound = (
+      payload: BottleRevealedPayload | RoundCompletedPayload,
     ) => {
       setPresentation('stats');
       setRound((current) => ({
@@ -817,6 +846,7 @@ export default function PresentationScreenPage() {
         startedAt: current?.startedAt ?? null,
         endsAt: null,
         remainingSeconds: 0,
+        isWineRevealed: payload.isWineRevealed,
       }));
       setWine(payload.wine);
       setStats(payload.stats);
@@ -828,9 +858,23 @@ export default function PresentationScreenPage() {
         votedCount: payload.stats.totalRatings,
       }));
       setToast({
-        message: 'Карточка образца раскрыта!',
+        message: payload.isWineRevealed
+          ? 'Карточка образца раскрыта!'
+          : 'Раунд завершён. Статистика готова.',
         tone: 'success',
       });
+    };
+
+    const handleRoundCompleted = (
+      payload: RoundCompletedPayload,
+    ) => {
+      applyCompletedRound(payload);
+    };
+
+    const handleBottleRevealed = (
+      payload: BottleRevealedPayload,
+    ) => {
+      applyCompletedRound(payload);
     };
 
     const handleEventStatusUpdated = (
@@ -908,6 +952,7 @@ export default function PresentationScreenPage() {
     };
 
     socket.on('round_started', handleRoundStarted);
+    socket.on('round_completed', handleRoundCompleted);
     socket.on('voting_closed', handleVotingClosed);
     socket.on('round_timer_updated', handleRoundTimerUpdated);
     socket.on('round_skipped', handleRoundSkipped);
@@ -921,6 +966,7 @@ export default function PresentationScreenPage() {
 
     return () => {
       socket.off('round_started', handleRoundStarted);
+      socket.off('round_completed', handleRoundCompleted);
       socket.off('voting_closed', handleVotingClosed);
       socket.off('round_timer_updated', handleRoundTimerUpdated);
       socket.off('round_skipped', handleRoundSkipped);
@@ -1078,7 +1124,7 @@ export default function PresentationScreenPage() {
                   connectedCount={counts.connectedCount}
                   votedCount={counts.votedCount}
                 />
-              ) : presentation === 'stats' && wine && stats && round ? (
+              ) : presentation === 'stats' && stats && round ? (
                 <StatsView round={round} wine={wine} stats={stats} />
               ) : round ? (
                 <LiveView

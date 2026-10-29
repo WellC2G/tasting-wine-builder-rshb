@@ -55,8 +55,19 @@ export interface BottleRevealedPayload {
   roundId: string;
   orderNumber?: number;
   blindLabel?: string;
-  wine: RevealedWine;
+  wine: RevealedWine | null;
   stats: RoundStats;
+  isWineRevealed: boolean;
+  message: string;
+}
+
+export interface RoundCompletedPayload {
+  roundId: string;
+  orderNumber: number;
+  blindLabel: string;
+  wine: RevealedWine | null;
+  stats: RoundStats;
+  isWineRevealed: boolean;
   message: string;
 }
 
@@ -114,6 +125,7 @@ export interface RestartRoundPayload extends RoundActionPayload {
 
 export interface ServerToClientEvents {
   round_started: (payload: RoundStartedPayload) => void;
+  round_completed: (payload: RoundCompletedPayload) => void;
   round_timer_updated: (payload: RoundTimerUpdatedPayload) => void;
   round_skipped: (payload: RoundSkippedPayload) => void;
   voting_closed: (payload: VotingClosedPayload) => void;
@@ -144,6 +156,7 @@ export interface ClientToServerEvents {
   'host:add_round_time': (payload: AddRoundTimePayload) => void;
   'host:restart_round': (payload: RestartRoundPayload) => void;
   'host:skip_round': (payload: RoundActionPayload) => void;
+  'host:finish_round': (payload: RoundActionPayload) => void;
   'host:reveal_bottle': (payload: RoundActionPayload) => void;
   'host:show_stats': (payload: RoundActionPayload) => void;
 }

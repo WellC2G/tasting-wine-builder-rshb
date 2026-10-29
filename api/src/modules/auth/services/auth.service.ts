@@ -547,6 +547,8 @@ export class AuthService {
     round: TastingRound,
     mode: TastingMode,
   ): GuestCurrentRoundDto {
+    const isWineRevealed =
+      mode === TastingMode.OPEN || round.revealedAt !== null;
     const dto: GuestCurrentRoundDto = {
       roundId: round.id,
       orderNumber: round.orderNumber,
@@ -554,9 +556,10 @@ export class AuthService {
       status: round.status,
       durationSeconds: round.durationSeconds,
       remainingSeconds: this.calculateRemainingSeconds(round),
+      isWineRevealed,
     };
 
-    if (mode === TastingMode.OPEN && round.wine) {
+    if (isWineRevealed && round.wine) {
       dto.wine = WineResponseDto.fromEntity(round.wine);
     }
 

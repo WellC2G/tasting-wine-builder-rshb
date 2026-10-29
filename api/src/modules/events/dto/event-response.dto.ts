@@ -27,7 +27,9 @@ export class EventResponseDto extends EventSummaryResponseDto {
       ...summary,
       rounds: [...event.rounds]
         .sort((left, right) => left.orderNumber - right.orderNumber)
-        .map((round) => EventRoundResponseDto.fromEntity(round)),
+        .map((round) =>
+          EventRoundResponseDto.fromEntity(round, event.mode),
+        ),
     };
   }
 }

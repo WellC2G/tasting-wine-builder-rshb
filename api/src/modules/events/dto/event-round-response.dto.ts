@@ -2,6 +2,9 @@ import { ApiProperty } from '@nestjs/swagger';
 
 import { WineResponseDto } from '../../catalog/dto/wine-response.dto';
 import {
+  TastingMode,
+} from '../entities/tasting-event.entity';
+import {
   TastingRound,
   TastingRoundStatus,
 } from '../entities/tasting-round.entity';
@@ -43,12 +46,22 @@ export class EventRoundResponseDto {
   revealedAt!: Date | null;
 
   @ApiProperty({
+    example: false,
+    description:
+      'Раскрыто ли вино. В OPEN-режиме всегда true, в BLIND — после отдельного раскрытия.',
+  })
+  isWineRevealed!: boolean;
+
+  @ApiProperty({
     type: WineResponseDto,
     description: 'Полные данные вина. Доступны только организатору.',
   })
   wine!: WineResponseDto;
 
-  static fromEntity(round: TastingRound): EventRoundResponseDto {
+  static fromEntity(
+    round: TastingRound,
+    mode: TastingMode,
+  ): EventRoundResponseDto {
     return {
       id: round.id,
       orderNumber: round.orderNumber,
@@ -57,6 +70,8 @@ export class EventRoundResponseDto {
       durationSeconds: round.durationSeconds,
       startedAt: round.startedAt,
       revealedAt: round.revealedAt,
+      isWineRevealed:
+        mode === TastingMode.OPEN || round.revealedAt !== null,
       wine: WineResponseDto.fromEntity(round.wine),
     };
   }

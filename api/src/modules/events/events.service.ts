@@ -489,7 +489,9 @@ export class EventsService {
 
     return [...event.rounds]
       .sort((left, right) => left.orderNumber - right.orderNumber)
-      .map((round) => EventRoundResponseDto.fromEntity(round));
+      .map((round) =>
+        EventRoundResponseDto.fromEntity(round, event.mode),
+      );
   }
 
   private assertUniqueOrderNumbers(

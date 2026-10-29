@@ -369,7 +369,7 @@ export class TastingSessionService {
     return { event, round, remainingSeconds };
   }
 
-  async revealBottle(
+  async finishRound(
     eventId: string,
     roundId: string,
     hostId: string,
@@ -390,19 +390,63 @@ export class TastingSessionService {
       round.status !== TastingRoundStatus.ACTIVE &&
       round.status !== TastingRoundStatus.VOTING_CLOSED
     ) {
-      throw new BadRequestException(
-        'Раскрыть образец можно только после запуска или закрытия голосования',
+      throw new ConflictException(
+        'Завершить можно только активный или приостановленный раунд',
       );
     }
 
     round.status = TastingRoundStatus.REVEALED;
-    round.revealedAt = new Date();
+    round.revealedAt =
+      event.mode === TastingMode.OPEN ? new Date() : null;
     await this.roundsRepository.save(round);
     this.roomStateService.clearRoundTimer(event.id, round.id);
     this.roomStateService.clearPausedRemainingSeconds(
       event.id,
       round.id,
     );
+    this.roomStateService.setLastViewedRound(event.id, round.id);
+
+    return { event, round, wine: round.wine };
+  }
+
+  async revealBottle(
+    eventId: string,
+    roundId: string,
+    hostId: string,
+  ): Promise<RevealBottleResult> {
+    const { event, round } = await this.findOwnedRound(
+      eventId,
+      roundId,
+      hostId,
+    );
+
+    if (event.status === TastingEventStatus.DRAFT) {
+      throw new ConflictException(
+        'Сначала завершите раунд, затем раскрывайте вино',
+      );
+    }
+
+    if (round.status !== TastingRoundStatus.REVEALED) {
+      throw new ConflictException(
+        'Сначала завершите раунд, затем раскрывайте вино',
+      );
+    }
+
+    if (event.mode === TastingMode.OPEN) {
+      if (!round.revealedAt) {
+        round.revealedAt = new Date();
+        await this.roundsRepository.save(round);
+      }
+
+      return { event, round, wine: round.wine };
+    }
+
+    if (round.revealedAt !== null) {
+      throw new ConflictException('Вино уже раскрыто');
+    }
+
+    round.revealedAt = new Date();
+    await this.roundsRepository.save(round);
     this.roomStateService.setLastViewedRound(event.id, round.id);
 
     return { event, round, wine: round.wine };
@@ -920,10 +964,12 @@ export class TastingSessionService {
       round,
       computedEndsAt,
     );
+    const isWineRevealed =
+      event.mode === TastingMode.OPEN || round.revealedAt !== null;
     const canSeeWine =
       viewer.role === 'HOST' ||
       event.mode === TastingMode.OPEN ||
-      round.status === TastingRoundStatus.REVEALED;
+      round.revealedAt !== null;
 
     const dto: LiveStateRoundDto = {
       roundId: round.id,
@@ -934,6 +980,7 @@ export class TastingSessionService {
       startedAt: round.startedAt,
       endsAt,
       remainingSeconds,
+      isWineRevealed,
     };
 
     if (canSeeWine) {

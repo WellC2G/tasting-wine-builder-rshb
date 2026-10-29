@@ -73,6 +73,7 @@ import type {
   EventStatusUpdatedPayload,
   ParticipantCounterPayload,
   ParticipantsUpdatedPayload,
+  RoundCompletedPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
   RoundStatsUpdatedPayload,
@@ -136,7 +137,8 @@ export default function HostControlPage() {
     | 'time'
     | 'restart'
     | 'skip'
-    | 'reveal'
+    | 'finish_round'
+    | 'reveal_wine'
     | 'stats'
     | null
   >(null);
@@ -473,8 +475,8 @@ export default function HostControlPage() {
       setToast({ message: payload.message, tone: 'success' });
     };
 
-    const handleBottleRevealed = (
-      payload: BottleRevealedPayload,
+    const applyCompletedRound = (
+      payload: BottleRevealedPayload | RoundCompletedPayload,
     ) => {
       setEvent((current) =>
         current
@@ -482,7 +484,18 @@ export default function HostControlPage() {
               ...current,
               rounds: current.rounds.map((round) =>
                 round.id === payload.roundId
-                  ? { ...round, status: 'REVEALED' }
+                  ? {
+                      ...round,
+                      status: 'REVEALED',
+                      isWineRevealed:
+                        payload.isWineRevealed ||
+                        round.isWineRevealed,
+                      revealedAt:
+                        payload.isWineRevealed &&
+                        round.revealedAt === null
+                          ? new Date().toISOString()
+                          : round.revealedAt,
+                    }
                   : round,
               ),
             }
@@ -500,6 +513,7 @@ export default function HostControlPage() {
         roundId: payload.roundId,
         votedCount: payload.stats.totalRatings,
       }));
+
       const score =
         payload.stats.meanScore !== null
           ? ` · ${payload.stats.meanScore.toLocaleString('ru-RU', {
@@ -508,9 +522,24 @@ export default function HostControlPage() {
           : '';
 
       setToast({
-        message: `Карточка раскрыта: ${payload.wine.name}${score}`,
+        message:
+          payload.isWineRevealed && payload.wine
+            ? `Карточка раскрыта: ${payload.wine.name}${score}`
+            : `Раунд завершён. Статистика готова${score}`,
         tone: 'success',
       });
+    };
+
+    const handleRoundCompleted = (
+      payload: RoundCompletedPayload,
+    ) => {
+      applyCompletedRound(payload);
+    };
+
+    const handleBottleRevealed = (
+      payload: BottleRevealedPayload,
+    ) => {
+      applyCompletedRound(payload);
     };
 
     const handleCounter = (payload: ParticipantCounterPayload) => {
@@ -572,6 +601,7 @@ export default function HostControlPage() {
     };
 
     socket.on('round_started', handleRoundStarted);
+    socket.on('round_completed', handleRoundCompleted);
     socket.on('voting_closed', handleVotingClosed);
     socket.on('round_timer_updated', handleRoundTimerUpdated);
     socket.on('round_skipped', handleRoundSkipped);
@@ -589,6 +619,7 @@ export default function HostControlPage() {
 
     return () => {
       socket.off('round_started', handleRoundStarted);
+      socket.off('round_completed', handleRoundCompleted);
       socket.off('voting_closed', handleVotingClosed);
       socket.off('round_timer_updated', handleRoundTimerUpdated);
       socket.off('round_skipped', handleRoundSkipped);
@@ -820,11 +851,17 @@ export default function HostControlPage() {
     eventIsActive &&
     (selectedRound?.status === 'ACTIVE' ||
       selectedRound?.status === 'VOTING_CLOSED');
-  const canReveal =
+  const canFinishRound =
     !controlsDisabled &&
     eventIsActive &&
     (selectedRound?.status === 'ACTIVE' ||
       selectedRound?.status === 'VOTING_CLOSED');
+  const canRevealWine =
+    !controlsDisabled &&
+    event?.mode === 'BLIND' &&
+    selectedRound?.status === 'REVEALED' &&
+    selectedRound.revealedAt === null &&
+    (eventIsActive || eventIsFinished);
   const canRestart =
     !controlsDisabled &&
     eventIsActive &&
@@ -972,12 +1009,24 @@ export default function HostControlPage() {
     setSkipTarget(null);
   };
 
-  const handleRevealBottle = () => {
-    if (!socket || !selectedRound || !canReveal) {
+  const handleFinishRound = () => {
+    if (!socket || !selectedRound || !canFinishRound) {
       return;
     }
 
-    setPendingAction('reveal');
+    setPendingAction('finish_round');
+    socket.emit('host:finish_round', {
+      eventId,
+      roundId: selectedRound.id,
+    });
+  };
+
+  const handleRevealWine = () => {
+    if (!socket || !selectedRound || !canRevealWine) {
+      return;
+    }
+
+    setPendingAction('reveal_wine');
     socket.emit('host:reveal_bottle', {
       eventId,
       roundId: selectedRound.id,
@@ -1392,6 +1441,27 @@ export default function HostControlPage() {
                   )}
                   Показать статистику
                 </button>
+                {event.mode === 'BLIND' ? (
+                  <button
+                    type="button"
+                    data-testid="control-reveal-wine"
+                    onClick={handleRevealWine}
+                    disabled={!canRevealWine}
+                    className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {pendingAction === 'reveal_wine' ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {selectedRound?.revealedAt !== null
+                      ? 'Вино раскрыто'
+                      : 'Раскрыть вино'}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   data-testid="control-restart-round"
@@ -1698,22 +1768,20 @@ export default function HostControlPage() {
 
                 <button
                   type="button"
-                  data-testid="control-reveal-bottle"
-                  onClick={handleRevealBottle}
-                  disabled={!canReveal}
+                  data-testid="control-finish-round"
+                  onClick={handleFinishRound}
+                  disabled={!canFinishRound}
                   className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-4 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
                 >
-                  {pendingAction === 'reveal' ? (
+                  {pendingAction === 'finish_round' ? (
                     <Loader2
                       className="h-4 w-4 animate-spin"
                       aria-hidden="true"
                     />
                   ) : (
-                    <Eye className="h-4 w-4" aria-hidden="true" />
+                    <Flag className="h-4 w-4" aria-hidden="true" />
                   )}
-                  {event.mode === 'OPEN'
-                    ? 'Завершить раунд'
-                    : 'Раскрыть карту'}
+                  Завершить раунд
                 </button>
               </div>
 
@@ -1761,7 +1829,9 @@ export default function HostControlPage() {
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-sky-100">
-                        {lastReveal.wine.name}
+                        {lastReveal.wine?.name ??
+                          lastReveal.blindLabel ??
+                          'Раунд завершён'}
                       </p>
                       <p className="mt-1 text-xs text-sky-200/70">
                         {lastReveal.stats.meanScore !== null

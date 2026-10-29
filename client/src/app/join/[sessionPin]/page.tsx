@@ -83,6 +83,7 @@ import type {
   BottleRevealedPayload,
   EventFinishedPayload,
   EventStatusUpdatedPayload,
+  RoundCompletedPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
   RoundStatsUpdatedPayload,
@@ -395,6 +396,7 @@ export default function GuestJoinPage() {
             status: live.currentRound.status,
             durationSeconds: live.currentRound.durationSeconds,
             remainingSeconds: live.currentRound.remainingSeconds,
+            isWineRevealed: live.currentRound.isWineRevealed,
             wine: live.currentRound.wine,
           }
         : null,
@@ -490,6 +492,7 @@ export default function GuestJoinPage() {
         status: 'ACTIVE',
         durationSeconds: payload.durationSeconds,
         remainingSeconds: payload.remainingSeconds,
+        isWineRevealed: Boolean(payload.wine),
         wine: payload.wine,
       };
 
@@ -630,8 +633,8 @@ export default function GuestJoinPage() {
       setToast({ message: payload.message, tone: 'success' });
     };
 
-    const handleBottleRevealed = (
-      payload: BottleRevealedPayload,
+    const applyCompletedRound = (
+      payload: BottleRevealedPayload | RoundCompletedPayload,
     ) => {
       setCurrentRound((round) => ({
         roundId: payload.roundId,
@@ -640,11 +643,12 @@ export default function GuestJoinPage() {
         blindLabel:
           payload.blindLabel ??
           round?.blindLabel ??
-          'Раскрытый образец',
+          'Образец',
         status: 'REVEALED',
         durationSeconds: round?.durationSeconds ?? 0,
         remainingSeconds: 0,
-        wine: payload.wine,
+        isWineRevealed: payload.isWineRevealed,
+        wine: payload.wine ?? undefined,
       }));
       setWine(payload.wine);
       setStats(payload.stats);
@@ -653,9 +657,23 @@ export default function GuestJoinPage() {
       setPausedRemainingSeconds(0);
       setPhase('revealed');
       setToast({
-        message: 'Карточка образца раскрыта!',
+        message: payload.isWineRevealed
+          ? 'Карточка образца раскрыта!'
+          : 'Раунд завершён. Статистика готова.',
         tone: 'success',
       });
+    };
+
+    const handleRoundCompleted = (
+      payload: RoundCompletedPayload,
+    ) => {
+      applyCompletedRound(payload);
+    };
+
+    const handleBottleRevealed = (
+      payload: BottleRevealedPayload,
+    ) => {
+      applyCompletedRound(payload);
     };
 
     const handleRoundStatsUpdated = (
@@ -690,6 +708,7 @@ export default function GuestJoinPage() {
     };
 
     socket.on('round_started', handleRoundStarted);
+    socket.on('round_completed', handleRoundCompleted);
     socket.on('voting_closed', handleVotingClosed);
     socket.on('round_timer_updated', handleRoundTimerUpdated);
     socket.on('round_skipped', handleRoundSkipped);
@@ -703,6 +722,7 @@ export default function GuestJoinPage() {
 
     return () => {
       socket.off('round_started', handleRoundStarted);
+      socket.off('round_completed', handleRoundCompleted);
       socket.off('voting_closed', handleVotingClosed);
       socket.off('round_timer_updated', handleRoundTimerUpdated);
       socket.off('round_skipped', handleRoundSkipped);
@@ -1381,17 +1401,42 @@ export default function GuestJoinPage() {
           <div className="mt-5 space-y-5 animate-fade-in">
             <div className="text-center">
               <p className="text-xs uppercase tracking-[0.2em] text-wine-300">
-                Образец раскрыт
+                {wine ? 'Образец раскрыт' : 'Статистика раунда'}
               </p>
               <h2
                 data-testid="guest-revealed-wine"
                 className="mt-2 text-3xl font-semibold tracking-tight text-white"
               >
-                {wine?.name ?? 'Карточка образца'}
+                {wine?.name ??
+                  currentRound?.blindLabel ??
+                  'Карточка образца'}
               </h2>
             </div>
 
-            {wine ? <WineDetailsCard wine={wine} /> : null}
+            {wine ? (
+              <WineDetailsCard wine={wine} />
+            ) : (
+              <div className="flex items-center gap-4 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+                <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl border border-wine-400/20 bg-wine-500/10 text-wine-300">
+                  <WineIcon
+                    className="h-10 w-10"
+                    strokeWidth={1.2}
+                    aria-hidden="true"
+                  />
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.16em] text-stone-500">
+                    Слепой образец
+                  </p>
+                  <p className="mt-1 text-xl font-semibold text-white">
+                    {currentRound?.blindLabel ?? 'Образец'}
+                  </p>
+                  <p className="mt-1 text-sm text-stone-400">
+                    Название и карточка вина ещё не раскрыты.
+                  </p>
+                </div>
+              </div>
+            )}
 
             {stats ? (
               <>

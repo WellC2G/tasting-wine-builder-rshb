@@ -105,6 +105,7 @@ export interface EventRound {
   durationSeconds: number;
   startedAt: string | null;
   revealedAt: string | null;
+  isWineRevealed: boolean;
   wine: Wine;
 }
 
@@ -144,6 +145,7 @@ export interface LiveStateRound {
   startedAt: string | null;
   endsAt: string | null;
   remainingSeconds: number;
+  isWineRevealed: boolean;
   wine?: Wine;
 }
 
@@ -165,6 +167,7 @@ export interface GuestCurrentRound {
   status: RoundStatus;
   durationSeconds: number;
   remainingSeconds: number;
+  isWineRevealed: boolean;
   wine?: RevealedWine;
 }
 

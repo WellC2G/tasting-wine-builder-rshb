@@ -33,10 +33,13 @@ export class GuestCurrentRoundDto {
   })
   remainingSeconds!: number;
 
+  @ApiProperty({ example: false })
+  isWineRevealed!: boolean;
+
   @ApiPropertyOptional({
     type: WineResponseDto,
     description:
-      'Данные вина. Передаются только в открытом режиме (OPEN); в слепом режиме (BLIND) поле отсутствует.',
+      'Данные вина. Передаются только в открытом режиме (OPEN) или после раскрытия образца.',
   })
   wine?: WineResponseDto;
 }

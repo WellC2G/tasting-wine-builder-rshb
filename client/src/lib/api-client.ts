@@ -387,6 +387,12 @@ export const apiClient = {
       });
     },
 
+    getByPin(sessionPin: string): Promise<EventDetail> {
+      return request<EventDetail>(
+        `/api/v1/events/by-pin/${encodeURIComponent(sessionPin)}`,
+      );
+    },
+
     get(eventId: string): Promise<EventDetail> {
       return request<EventDetail>(`/api/v1/events/${eventId}`);
     },

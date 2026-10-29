@@ -1,373 +1,358 @@
-import { ApiExternalLink } from '@/components/api-external-link';
+'use client';
 
-const features = [
-  {
-    tag: 'PARKER_100',
-    title: 'Шкала Роберта Паркера',
-    description:
-      'Пятьдесят базовых баллов и четыре критерия: внешний вид, аромат, вкус и потенциал. Итоговая оценка автоматически определяет категорию качества.',
-  },
-  {
-    tag: 'BLIND',
-    title: 'Синхронная слепая подача',
-    description:
-      'Комнаты Socket.io удерживают все устройства в одном ритме. Название, винодельня и цена скрыты до команды ведущего «Раскрыть образец».',
-  },
-  {
-    tag: '2σ',
-    title: 'Фильтрация выбросов',
-    description:
-      'Начиная с пяти оценок значения за пределами интервала двух сигм помечаются как выбросы и исключаются из итоговых расчётов и выгрузки.',
-  },
-  {
-    tag: 'EXPORT',
-    title: 'Выгрузка в Народный рейтинг',
-    description:
-      'Сформированный пакет оценок отправляется в имитационный приёмник, получает квитанцию и сохраняется целиком в журнале экспорта.',
-  },
-];
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  ArrowRight,
+  Award,
+  EyeOff,
+  KeyRound,
+  Loader2,
+  Sparkles,
+  Trophy,
+  UserRound,
+  Users,
+  Wine,
+} from 'lucide-react';
 
-const sampleBreakdown = [
-  { label: 'Внешний вид', value: 4, max: 5 },
-  { label: 'Аромат', value: 14, max: 15 },
-  { label: 'Вкус и послевкусие', value: 17, max: 20 },
-  { label: 'Потенциал', value: 7, max: 10 },
-];
+import {
+  ApiError,
+  apiClient,
+  getApiErrorMessage,
+} from '@/lib/api-client';
+import { clearHostSession, getHostToken } from '@/lib/session';
 
-const services = [
-  {
-    name: 'client',
-    stack: 'Next.js 14 · standalone',
-    port: '3000',
-    description:
-      'Мобильный пульт ведущего, презентационный экран и анкета участника.',
-  },
-  {
-    name: 'api',
-    stack: 'NestJS 10 · Socket.io',
-    port: '4000',
-    description:
-      'REST API с версионированием, real-time шлюз, healthcheck и документация OpenAPI.',
-  },
-  {
-    name: 'postgres',
-    stack: 'PostgreSQL 16 Alpine',
-    port: '5432',
-    description:
-      'Надёжное реляционное хранилище на именованном томе pgdata.',
-  },
-];
+function normalizePin(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 6);
+}
 
 export default function HomePage() {
+  const router = useRouter();
+  const [guestPin, setGuestPin] = useState('');
+  const [sommelierPin, setSommelierPin] = useState('');
+  const [guestError, setGuestError] = useState<string | null>(null);
+  const [sommelierError, setSommelierError] = useState<string | null>(
+    null,
+  );
+  const [openingControl, setOpeningControl] = useState(false);
+
+  const handleGuestSubmit = (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setGuestError(null);
+
+    if (!/^\d{6}$/.test(guestPin)) {
+      setGuestError('Введите 6-значный код сессии');
+      return;
+    }
+
+    router.push(`/join/${guestPin}`);
+  };
+
+  const handleSommelierSubmit = async (
+    event: React.FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    setSommelierError(null);
+
+    const token = getHostToken();
+    const pin = sommelierPin.trim();
+
+    if (!token) {
+      router.push(pin ? `/host/login?pin=${pin}` : '/host/login');
+      return;
+    }
+
+    if (!pin) {
+      router.push('/host/events');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(pin)) {
+      setSommelierError('Введите 6-значный код сессии');
+      return;
+    }
+
+    setOpeningControl(true);
+
+    try {
+      const tastingEvent = await apiClient.events.getByPin(pin);
+      router.push(`/host/events/${tastingEvent.id}/control`);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.push(`/host/login?pin=${pin}`);
+        return;
+      }
+
+      setSommelierError(getApiErrorMessage(error));
+    } finally {
+      setOpeningControl(false);
+    }
+  };
+
+  const openHostCabinet = () => {
+    router.push(getHostToken() ? '/host/events' : '/host/login');
+  };
+
   return (
-    <main className="relative overflow-hidden">
+    <main className="relative min-h-screen overflow-hidden bg-stone-950 text-stone-100">
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[560px] bg-gradient-to-b from-wine-900/40 via-stone-950/0 to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[680px] bg-[radial-gradient(circle_at_top,_rgba(159,18,57,0.34),transparent_60%)]"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-1/2 top-[-220px] h-[440px] w-[780px] -translate-x-1/2 rounded-full bg-wine-700/20 blur-3xl"
+        className="pointer-events-none absolute left-1/2 top-[-260px] h-[520px] w-[920px] -translate-x-1/2 rounded-full bg-wine-700/20 blur-3xl"
       />
 
-      <div className="relative mx-auto w-full max-w-6xl px-5 pb-12 pt-6 sm:px-8">
+      <div className="relative mx-auto w-full max-w-6xl px-5 pb-14 pt-6 sm:px-8">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <img
               src="/favicon.svg"
               alt=""
-              width={40}
-              height={40}
+              width={42}
+              height={42}
               className="h-10 w-10 rounded-xl"
             />
             <div>
-              <p className="text-sm font-semibold tracking-tight">
+              <p className="text-sm font-semibold tracking-tight text-white">
                 Конструктор дегустаций
               </p>
               <p className="text-xs text-stone-400">
-                Шкала Роберта Паркера · слепой режим
+                Вино, вкус и живые впечатления
               </p>
             </div>
           </div>
-          <span className="inline-flex min-h-9 items-center gap-2 rounded-full border border-wine-500/30 bg-wine-500/10 px-3 py-1 text-xs font-medium text-wine-200">
-            <span
-              aria-hidden="true"
-              className="h-1.5 w-1.5 rounded-full bg-emerald-400"
-            />
-            Этап 6 · веб-интерфейс
+          <span className="inline-flex min-h-9 items-center gap-2 rounded-full border border-wine-400/25 bg-wine-500/10 px-3 text-xs font-medium text-wine-200">
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            Вечер, который запомнится
           </span>
         </header>
 
-        <section className="grid gap-12 pb-16 pt-14 lg:grid-cols-[1.12fr_0.88fr] lg:items-center lg:pt-24">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-              Платформа для проведения дегустаций
-            </p>
-            <h1 className="mt-5 text-balance text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              Слепая дегустация,
-              <span className="block bg-gradient-to-r from-wine-200 via-wine-300 to-wine-500 bg-clip-text text-transparent">
-                продуманная до деталей.
-              </span>
-            </h1>
-            <p className="mt-6 max-w-xl text-base leading-7 text-stone-300 sm:text-lg">
-              Составьте программу дегустации, проведите синхронные слепые
-              раунды с телефона и опубликуйте статистически выверенные
-              результаты. Всё приложение запускается одной командой.
-            </p>
-
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <ApiExternalLink
-                path="/api/docs"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
-              >
-                Документация API
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.7"
-                  className="h-4 w-4"
-                >
-                  <path
-                    d="M7 4.5h8.5V13M15.5 4.5 5 15"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </ApiExternalLink>
-              <ApiExternalLink
-                path="/api/v1/health"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 text-sm font-semibold text-stone-100 transition hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
-              >
-                Проверить состояние API
-              </ApiExternalLink>
-            </div>
-
-            <dl className="mt-10 grid max-w-xl grid-cols-2 gap-x-6 gap-y-5 sm:grid-cols-4">
-              {[
-                ['3', 'контейнера'],
-                ['1', 'команда'],
-                ['100', 'баллов'],
-                ['2σ', 'правило выбросов'],
-              ].map(([value, label]) => (
-                <div key={label}>
-                  <dt className="text-2xl font-semibold tracking-tight text-stone-100">
-                    {value}
-                  </dt>
-                  <dd className="mt-1 text-xs uppercase tracking-[0.14em] text-stone-500">
-                    {label}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-
-            <a
-              href="/host/login"
-              className="mt-6 inline-flex min-h-12 items-center gap-2 rounded-xl px-1 text-sm font-semibold text-wine-200 transition hover:text-white"
-            >
-              Открыть кабинет организатора
-              <span aria-hidden="true">→</span>
-            </a>
-          </div>
-
-          <aside className="rounded-3xl border border-white/10 bg-white/[0.035] p-5 shadow-glow backdrop-blur sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                  Пример оценки
-                </p>
-                <p className="mt-1 text-sm text-stone-300">
-                  Образец №3 · слепой раунд
-                </p>
-              </div>
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
-                ВЫДАЮЩЕЕСЯ
-              </span>
-            </div>
-
-            <div className="mt-6 flex items-end gap-3">
-              <span className="text-7xl font-semibold tracking-tighter text-wine-200">
-                92
-              </span>
-              <span className="pb-3 text-sm text-stone-500">из 100</span>
-            </div>
-            <p className="mt-1 text-sm text-stone-400">
-              Выдающееся вино · 90–94 балла
-            </p>
-
-            <div className="mt-7 space-y-4">
-              {sampleBreakdown.map((criterion) => (
-                <div key={criterion.label}>
-                  <div className="flex items-baseline justify-between gap-3 text-xs">
-                    <span className="text-stone-300">{criterion.label}</span>
-                    <span className="font-mono text-stone-500">
-                      {criterion.value}/{criterion.max}
-                    </span>
-                  </div>
-                  <div
-                    role="progressbar"
-                    aria-label={`Оценка: ${criterion.label}`}
-                    aria-valuemin={0}
-                    aria-valuemax={criterion.max}
-                    aria-valuenow={criterion.value}
-                    className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10"
-                  >
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-wine-500 to-wine-300"
-                      style={{
-                        width: `${(criterion.value / criterion.max) * 100}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-7 rounded-2xl border border-white/10 bg-stone-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
-                Формула Паркера
-              </p>
-              <p className="mt-2 font-mono text-xs leading-6 text-stone-300">
-                50 + 4 + 14 + 17 + 7 = 92
-              </p>
-            </div>
-          </aside>
-        </section>
-
-        <section
-          id="features"
-          className="border-t border-white/5 py-16 sm:py-20"
-        >
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-            Ключевые механики
+        <section className="mx-auto max-w-4xl pb-12 pt-14 text-center sm:pt-20">
+          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-wine-300">
+            Пространство вкуса
           </p>
-          <div className="mt-3 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <h2 className="max-w-xl text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-              В центре внимания — вино, а не этикетка.
-            </h2>
-            <p className="max-w-md text-sm leading-6 text-stone-400">
-              Возможности соответствуют архитектурной спецификации. На шестом
-              этапе добавлены пульт ведущего, экран проектора и PWA-анкета
-              гостя с живой синхронизацией.
-            </p>
-          </div>
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2">
-            {features.map((feature) => (
-              <article
-                key={feature.tag}
-                className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:border-wine-500/30 hover:bg-white/[0.05]"
-              >
-                <span className="inline-flex rounded-lg border border-wine-400/25 bg-wine-500/10 px-2.5 py-1 font-mono text-[11px] font-medium tracking-wide text-wine-200">
-                  {feature.tag}
-                </span>
-                <h3 className="mt-5 text-lg font-semibold tracking-tight">
-                  {feature.title}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-stone-400">
-                  {feature.description}
-                </p>
-              </article>
-            ))}
-          </div>
+          <h1 className="mt-5 text-balance text-4xl font-semibold leading-[1.06] tracking-tight text-white sm:text-5xl lg:text-6xl">
+            Дегустация, в которой
+            <span className="block bg-gradient-to-r from-wine-200 via-wine-300 to-wine-500 bg-clip-text text-transparent">
+              каждый голос важен.
+            </span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-2xl text-base leading-7 text-stone-300 sm:text-lg">
+            Оценивайте вина вслепую или открыто, следите за ходом вечера
+            в реальном времени и вместе с гостями формируйте Народный
+            винный рейтинг.
+          </p>
         </section>
 
-        <section
-          id="runtime"
-          className="border-t border-white/5 py-16 sm:py-20"
-        >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <section className="grid gap-5 lg:grid-cols-2">
+          <form
+            onSubmit={handleGuestSubmit}
+            className="flex flex-col rounded-3xl border border-wine-400/25 bg-gradient-to-br from-wine-950/60 via-stone-900/80 to-stone-950 p-6 shadow-2xl backdrop-blur sm:p-8"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-wine-400/30 bg-wine-500/15 text-wine-200">
+                <UserRound className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-wine-300">
+                  Для гостя
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                  Участнику дегустации
+                </h2>
+              </div>
+            </div>
+
+            <p className="mt-5 text-sm leading-6 text-stone-400">
+              Введите 6-значный код сессии с экрана или приглашения
+              сомелье.
+            </p>
+
+            <label className="mt-6 block">
+              <span className="mb-2 block text-sm font-medium text-stone-300">
+                Код сессии
+              </span>
+              <input
+                data-testid="landing-guest-pin"
+                value={guestPin}
+                onChange={(event) =>
+                  setGuestPin(normalizePin(event.target.value))
+                }
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                placeholder="Код сессии, например 482910"
+                className="min-h-14 w-full rounded-2xl border border-white/10 bg-stone-950/70 px-4 text-center font-mono text-2xl tracking-[0.28em] text-white outline-none placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-stone-500 focus:border-wine-400/60 focus:ring-2 focus:ring-wine-500/20"
+              />
+            </label>
+
+            {guestError ? (
+              <p
+                role="alert"
+                className="mt-3 rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200"
+              >
+                {guestError}
+              </p>
+            ) : null}
+
+            <button
+              type="submit"
+              data-testid="landing-guest-submit"
+              className="mt-6 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-wine-600 px-5 text-base font-semibold text-white transition hover:bg-wine-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
+            >
+              Присоединиться к сессии
+              <ArrowRight className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </form>
+
+          <form
+            onSubmit={(event) => void handleSommelierSubmit(event)}
+            className="flex flex-col rounded-3xl border border-white/10 bg-white/[0.035] p-6 shadow-glow backdrop-blur sm:p-8"
+          >
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-amber-300/25 bg-amber-300/10 text-amber-200">
+                <KeyRound className="h-7 w-7" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.18em] text-amber-200/80">
+                  Для сомелье
+                </p>
+                <h2 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+                  Вход для сомелье
+                </h2>
+              </div>
+            </div>
+
+            <p className="mt-5 text-sm leading-6 text-stone-400">
+              Управляйте раундами с пульта или откройте кабинет
+              мероприятий.
+            </p>
+
+            <label className="mt-6 block">
+              <span className="mb-2 block text-sm font-medium text-stone-300">
+                Код сессии
+              </span>
+              <input
+                data-testid="landing-host-pin"
+                value={sommelierPin}
+                onChange={(event) =>
+                  setSommelierPin(normalizePin(event.target.value))
+                }
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Код сессии (необязательно)"
+                className="min-h-14 w-full rounded-2xl border border-white/10 bg-stone-950/70 px-4 text-center font-mono text-2xl tracking-[0.28em] text-white outline-none placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-stone-500 focus:border-wine-400/60 focus:ring-2 focus:ring-wine-500/20"
+              />
+            </label>
+
+            {sommelierError ? (
+              <p
+                role="alert"
+                className="mt-3 rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200"
+              >
+                {sommelierError}
+              </p>
+            ) : null}
+
+            <button
+              type="submit"
+              data-testid="landing-host-submit"
+              disabled={openingControl}
+              className="mt-6 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-white px-5 text-base font-semibold text-stone-950 transition hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {openingControl ? (
+                <Loader2
+                  className="h-5 w-5 animate-spin"
+                  aria-hidden="true"
+                />
+              ) : (
+                <Wine className="h-5 w-5" aria-hidden="true" />
+              )}
+              {openingControl
+                ? 'Открываем пульт…'
+                : 'Открыть пульт по коду'}
+            </button>
+
+            <button
+              type="button"
+              onClick={openHostCabinet}
+              className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-2xl border border-white/10 px-5 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+            >
+              Войти в кабинет организатора
+            </button>
+          </form>
+        </section>
+
+        <section className="mt-14 border-t border-white/5 pt-12 sm:mt-16">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-                Структура приложения
+                Как проходит вечер
               </p>
-              <h2 className="mt-3 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-                Три сервиса, одна сеть.
+              <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                Продуманно для гостей и сомелье
               </h2>
             </div>
-            <p className="max-w-md text-sm leading-6 text-stone-400">
-              Сначала становится готовой PostgreSQL, затем запускается API, а
-              после успешной проверки — клиент. Все сервисы общаются внутри
-              bridge-сети.
+            <p className="max-w-md text-sm leading-6 text-stone-500">
+              От первого бокала до итогового рейтинга — всё происходит
+              синхронно на ваших устройствах.
             </p>
           </div>
 
-          <div className="mt-10 grid gap-4 lg:grid-cols-3">
-            {services.map((service, index) => (
-              <article
-                key={service.name}
-                className="flex flex-col rounded-2xl border border-white/10 bg-stone-900/40 p-6"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-mono text-xs text-stone-500">
-                    0{index + 1}
-                  </span>
-                  <span className="rounded-md border border-white/10 bg-white/[0.05] px-2 py-1 font-mono text-[11px] text-stone-300">
-                    :{service.port}
-                  </span>
-                </div>
-                <h3 className="mt-6 font-mono text-lg font-semibold text-stone-100">
-                  {service.name}
-                </h3>
-                <p className="mt-1 text-xs uppercase tracking-[0.12em] text-wine-300">
-                  {service.stack}
-                </p>
-                <p className="mt-4 text-sm leading-6 text-stone-400">
-                  {service.description}
-                </p>
-              </article>
-            ))}
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-dashed border-wine-500/25 bg-wine-950/20 px-5 py-4">
-            <p className="font-mono text-xs text-stone-300">
-              сеть: tasting_net
-            </p>
-            <p className="text-xs uppercase tracking-[0.14em] text-stone-500">
-              драйвер bridge · внутренний DNS
-            </p>
-          </div>
-        </section>
-
-        <section className="pb-16 pt-2 sm:pb-20">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/60 via-stone-900/70 to-stone-950 p-6 sm:p-10">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-wine-300">
-              Быстрый старт
-            </p>
-            <h2 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-              Одна команда. Всё приложение.
-            </h2>
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-white/10 bg-stone-950/80 p-4">
-              <pre className="font-mono text-xs leading-6 text-stone-300 sm:text-sm">
-                <code>
-                  {'cp .env.example .env\n'}
-                  {'docker compose up --build'}
-                </code>
-              </pre>
-            </div>
-            <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-              <ApiExternalLink
-                path="/api/docs"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl bg-white px-5 text-sm font-semibold text-stone-950 transition hover:bg-stone-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-              >
-                Изучить API
-              </ApiExternalLink>
-              <ApiExternalLink
-                path="/api/v1/health"
-                className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/15 px-5 text-sm font-semibold text-stone-100 transition hover:bg-white/[0.06] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-wine-300"
-              >
-                Проверить стек
-              </ApiExternalLink>
-            </div>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <Award
+                className="h-6 w-6 text-wine-300"
+                aria-hidden="true"
+              />
+              <h3 className="mt-5 text-lg font-semibold text-white">
+                100-балльная шкала Паркера
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-stone-400">
+                Внешний вид, аромат, вкус и потенциал складываются в
+                понятную профессиональную оценку.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <EyeOff
+                className="h-6 w-6 text-wine-300"
+                aria-hidden="true"
+              />
+              <h3 className="mt-5 text-lg font-semibold text-white">
+                Слепой и открытый формат
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-stone-400">
+                Скрывайте этикетку до раскрытия или знакомьтесь с вином
+                сразу — сомелье выбирает формат вечера.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <Trophy
+                className="h-6 w-6 text-wine-300"
+                aria-hidden="true"
+              />
+              <h3 className="mt-5 text-lg font-semibold text-white">
+                Народный винный рейтинг
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-stone-400">
+                Оценки гостей проходят статистическую проверку и
+                складываются в честный коллективный результат.
+              </p>
+            </article>
           </div>
         </section>
 
-        <footer className="flex flex-col gap-3 border-t border-white/5 py-8 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>Конструктор дегустаций · этап 6</p>
-          <p className="font-mono">
-            Next.js 14 · NestJS 10 · PostgreSQL 16
+        <footer className="mt-14 flex flex-col gap-3 border-t border-white/5 pt-7 text-xs text-stone-500 sm:flex-row sm:items-center sm:justify-between">
+          <p className="inline-flex items-center gap-2">
+            <Users className="h-4 w-4" aria-hidden="true" />
+            Конструктор дегустаций
           </p>
+          <p>Сделано для тех, кто выбирает вино сердцем и вкусом.</p>
         </footer>
       </div>
     </main>

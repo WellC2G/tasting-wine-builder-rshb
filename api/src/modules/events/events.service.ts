@@ -174,6 +174,30 @@ export class EventsService {
     });
   }
 
+  async findByPin(
+    sessionPin: string,
+    hostId: string,
+  ): Promise<EventResponseDto> {
+    if (!/^\d{6}$/.test(sessionPin)) {
+      throw new BadRequestException(
+        'PIN-код должен состоять из 6 цифр',
+      );
+    }
+
+    const event = await this.eventsRepository.findOne({
+      where: { sessionPin, hostId },
+      select: { id: true },
+    });
+
+    if (!event) {
+      throw new NotFoundException(
+        'Дегустация с таким кодом сессии не найдена',
+      );
+    }
+
+    return this.findOneForHost(event.id, hostId);
+  }
+
   async findOneForHost(
     id: string,
     hostId: string,

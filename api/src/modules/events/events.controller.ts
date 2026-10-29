@@ -85,6 +85,36 @@ export class EventsController {
     return this.eventsService.findAllForHost(request.user.sub);
   }
 
+  @Get('by-pin/:sessionPin')
+  @ApiOperation({
+    summary: 'Найти мероприятие по PIN-коду',
+    description:
+      'Возвращает мероприятие текущего организатора по шестизначному ' +
+      'коду сессии для прямого перехода в пульт управления.',
+  })
+  @ApiParam({
+    name: 'sessionPin',
+    description: 'Шестизначный код сессии',
+    example: '482910',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Мероприятие найдено',
+    type: EventResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Некорректный PIN-код' })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  findByPin(
+    @Param('sessionPin') sessionPin: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<EventResponseDto> {
+    return this.eventsService.findByPin(
+      sessionPin,
+      request.user.sub,
+    );
+  }
+
   @Get(':id/rounds')
   @ApiOperation({
     summary: 'Раунды мероприятия',

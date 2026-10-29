@@ -32,6 +32,7 @@ export interface ParticipantCounterPayload {
 export interface RemoveParticipantPayload {
   eventId: string;
   participantId: string;
+  keepRatings?: boolean;
 }
 
 export interface ShowSummaryPayload {

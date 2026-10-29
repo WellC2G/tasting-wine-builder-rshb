@@ -193,6 +193,8 @@ export default function HostControlPage() {
   const [participantSearch, setParticipantSearch] = useState('');
   const [removeTarget, setRemoveTarget] =
     useState<EventParticipant | null>(null);
+  const [keepParticipantRatings, setKeepParticipantRatings] =
+    useState(false);
   const [removingParticipant, setRemovingParticipant] =
     useState(false);
   const [summaryItems, setSummaryItems] = useState<
@@ -1260,6 +1262,7 @@ export default function HostControlPage() {
       await apiClient.events.removeParticipant(
         eventId,
         removeTarget.id,
+        keepParticipantRatings,
       );
       setParticipants((current) =>
         current.filter(
@@ -1268,7 +1271,9 @@ export default function HostControlPage() {
       );
       setRemoveTarget(null);
       setToast({
-        message: 'Участник удалён, оценки пересчитаны',
+        message: keepParticipantRatings
+          ? 'Участник отключён, его оценки сохранены'
+          : 'Участник удалён, его оценки аннулированы',
         tone: 'success',
       });
     } catch (error) {
@@ -2280,7 +2285,10 @@ export default function HostControlPage() {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setRemoveTarget(participant)}
+                    onClick={() => {
+                      setKeepParticipantRatings(false);
+                      setRemoveTarget(participant);
+                    }}
                     className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-rose-400/20 px-3 text-xs font-medium text-rose-200 transition hover:bg-rose-400/10"
                   >
                     <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
@@ -2301,9 +2309,51 @@ export default function HostControlPage() {
       >
         <p className="text-sm leading-6 text-stone-300">
           Вы уверены, что хотите удалить участника «
-          {removeTarget?.nickname ?? ''}» из дегустации? Все его оценки
-          в этом мероприятии будут аннулированы.
+          {removeTarget?.nickname ?? ''}» из дегустации? Выберите, что
+          сделать с его оценками.
         </p>
+
+        <div className="mt-5 space-y-2">
+          <button
+            type="button"
+            aria-pressed={keepParticipantRatings}
+            onClick={() => setKeepParticipantRatings(true)}
+            className={cn(
+              'w-full rounded-2xl border p-4 text-left transition',
+              keepParticipantRatings
+                ? 'border-emerald-400/50 bg-emerald-400/10'
+                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
+            )}
+          >
+            <p className="text-sm font-semibold text-white">
+              Сохранить оценки участника
+            </p>
+            <p className="mt-1 text-xs leading-5 text-stone-400">
+              Участник будет отключён от сессии, но его отправленные
+              оценки останутся в статистике дегустации.
+            </p>
+          </button>
+          <button
+            type="button"
+            aria-pressed={!keepParticipantRatings}
+            onClick={() => setKeepParticipantRatings(false)}
+            className={cn(
+              'w-full rounded-2xl border p-4 text-left transition',
+              !keepParticipantRatings
+                ? 'border-rose-400/50 bg-rose-400/10'
+                : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]',
+            )}
+          >
+            <p className="text-sm font-semibold text-white">
+              Удалить вместе с оценками
+            </p>
+            <p className="mt-1 text-xs leading-5 text-stone-400">
+              Участник будет удалён, а все его оценки в этом
+              мероприятии будут аннулированы.
+            </p>
+          </button>
+        </div>
+
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button
             type="button"
@@ -2328,7 +2378,9 @@ export default function HostControlPage() {
             ) : (
               <Trash2 className="h-4 w-4" aria-hidden="true" />
             )}
-            Удалить участника
+            {keepParticipantRatings
+              ? 'Отключить участника'
+              : 'Удалить участника'}
           </button>
         </div>
       </Modal>

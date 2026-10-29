@@ -346,6 +346,7 @@ export class TastingSessionGateway
         payload.eventId,
         payload.participantId,
         hostId,
+        payload.keepRatings === true,
       );
     });
   }
@@ -921,11 +922,13 @@ export class TastingSessionGateway
     eventId: string,
     participantId: string,
     hostId: string,
+    keepRatings = false,
   ): Promise<void> {
     const result = await this.tastingSessionService.removeParticipant(
       eventId,
       participantId,
       hostId,
+      keepRatings,
     );
     const room = tastingRoom(eventId);
     const removalPayload = {

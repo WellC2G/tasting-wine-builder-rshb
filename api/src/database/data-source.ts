@@ -18,6 +18,7 @@ import { ParticipantNetworkIdentity1793140634953 } from './migrations/1793140634
 import { WineCatalogUpdates1793226948059 } from './migrations/1793226948059-WineCatalogUpdates';
 import { RemoveStarsScale1793232483938 } from './migrations/1793232483938-RemoveStarsScale';
 import { SingleActiveEvent1793232864945 } from './migrations/1793232864945-SingleActiveEvent';
+import { NullableRatingParticipant1793271584483 } from './migrations/1793271584483-NullableRatingParticipant';
 
 // Support both `api/.env` and the repository-level `.env` when running the
 // TypeORM CLI from the api directory. Existing values are never overwritten.
@@ -70,6 +71,7 @@ const AppDataSource = new DataSource({
     WineCatalogUpdates1793226948059,
     RemoveStarsScale1793232483938,
     SingleActiveEvent1793232864945,
+    NullableRatingParticipant1793271584483,
   ],
   migrationsRun: false,
   synchronize: false,

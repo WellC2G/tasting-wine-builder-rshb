@@ -408,9 +408,10 @@ export const apiClient = {
     removeParticipant(
       eventId: string,
       participantId: string,
+      keepRatings: boolean,
     ): Promise<void> {
       return request<void>(
-        `/api/v1/events/${eventId}/participants/${participantId}`,
+        `/api/v1/events/${eventId}/participants/${participantId}?keepRatings=${keepRatings}`,
         { method: 'DELETE' },
       );
     },

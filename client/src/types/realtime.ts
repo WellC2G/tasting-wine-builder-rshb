@@ -182,6 +182,7 @@ export interface ClientToServerEvents {
   'host:remove_participant': (payload: {
     eventId: string;
     participantId: string;
+    keepRatings?: boolean;
   }) => void;
   'host:start_round': (payload: StartRoundPayload) => void;
   'host:lock_voting': (payload: RoundActionPayload) => void;

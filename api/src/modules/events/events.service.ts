@@ -261,11 +261,13 @@ export class EventsService {
     id: string,
     participantId: string,
     hostId: string,
+    keepRatings = false,
   ): Promise<void> {
     await this.tastingSessionGateway.removeParticipantAndNotify(
       id,
       participantId,
       hostId,
+      keepRatings,
     );
   }
 

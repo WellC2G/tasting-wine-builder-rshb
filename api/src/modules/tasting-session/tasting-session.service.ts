@@ -841,6 +841,7 @@ export class TastingSessionService {
     eventId: string,
     participantId: string,
     hostId: string,
+    keepRatings = false,
   ): Promise<RemovedParticipantResult> {
     const event = await this.eventsRepository.findOne({
       where: { id: eventId, hostId },
@@ -862,6 +863,17 @@ export class TastingSessionService {
 
     if (!participant) {
       throw new NotFoundException('Участник не найден');
+    }
+
+    if (keepRatings) {
+      await this.ratingsRepository.update(
+        { participantId: participant.id },
+        { participantId: null },
+      );
+    } else {
+      await this.ratingsRepository.delete({
+        participantId: participant.id,
+      });
     }
 
     await this.participantsRepository.delete({

@@ -64,18 +64,18 @@ export class Rating {
   })
   round!: TastingRound;
 
-  @Column({ name: 'participant_id', type: 'uuid' })
-  participantId!: string;
+  @Column({ name: 'participant_id', type: 'uuid', nullable: true })
+  participantId!: string | null;
 
   @ManyToOne(() => Participant, {
-    nullable: false,
-    onDelete: 'CASCADE',
+    nullable: true,
+    onDelete: 'SET NULL',
   })
   @JoinColumn({
     name: 'participant_id',
     foreignKeyConstraintName: 'fk_ratings_participant',
   })
-  participant!: Participant;
+  participant!: Participant | null;
 
   @Column({ name: 'appearance_score', type: 'smallint', nullable: true })
   appearanceScore!: number | null;

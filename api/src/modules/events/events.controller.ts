@@ -10,6 +10,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -124,8 +126,8 @@ export class EventsController {
   @ApiOperation({
     summary: 'Удалить участника',
     description:
-      'Удаляет участника и все его оценки, пересчитывает статистику ' +
-      'и синхронизирует изменение со всеми экранами.',
+      'Отключает участника. Оценки можно сохранить или удалить вместе ' +
+      'с участником, затем статистика пересчитывается.',
   })
   @ApiParam({
     name: 'id',
@@ -137,6 +139,14 @@ export class EventsController {
     description: 'Идентификатор участника',
     format: 'uuid',
   })
+  @ApiQuery({
+    name: 'keepRatings',
+    required: false,
+    description:
+      'true — сохранить оценки участника, false — удалить их. ' +
+      'По умолчанию false.',
+    example: false,
+  })
   @ApiResponse({ status: 204, description: 'Участник удалён' })
   @ApiResponse({ status: 401, description: 'Требуется авторизация' })
   @ApiResponse({
@@ -146,12 +156,14 @@ export class EventsController {
   removeParticipant(
     @Param('id', eventIdPipe) id: string,
     @Param('participantId', participantIdPipe) participantId: string,
+    @Query('keepRatings') keepRatings: string | undefined,
     @Req() request: AuthenticatedRequest,
   ): Promise<void> {
     return this.eventsService.removeParticipant(
       id,
       participantId,
       request.user.sub,
+      keepRatings === 'true',
     );
   }
 

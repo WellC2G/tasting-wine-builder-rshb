@@ -85,8 +85,7 @@ export default function HostEventsPage() {
   );
   const [title, setTitle] = useState('');
   const [mode, setMode] = useState<TastingMode>('BLIND');
-  const [scaleType, setScaleType] =
-    useState<ScaleType>('PARKER_100');
+  const scaleType: ScaleType = 'PARKER_100';
   const [rounds, setRounds] = useState<PickedRound[]>([]);
   const [wines, setWines] = useState<Wine[]>([]);
   const [winesLoading, setWinesLoading] = useState(false);
@@ -163,7 +162,6 @@ export default function HostEventsPage() {
     setEditingEventId(null);
     setTitle('');
     setMode('BLIND');
-    setScaleType('PARKER_100');
     setRounds([]);
     setWineSearch('');
     setCreateError(null);
@@ -180,7 +178,6 @@ export default function HostEventsPage() {
       setEditingEventId(detail.id);
       setTitle(detail.title);
       setMode(detail.mode);
-      setScaleType(detail.scaleType);
       setRounds(
         detail.rounds.map((round, index) => ({
           key: round.id,
@@ -819,54 +816,28 @@ export default function HostEventsPage() {
             />
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-stone-300">
-                Режим
-              </legend>
-              <div className="grid grid-cols-2 gap-2">
-                {(['BLIND', 'OPEN'] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => handleModeChange(value)}
-                    className={cn(
-                      'min-h-12 rounded-xl border px-3 text-sm font-medium transition',
-                      mode === value
-                        ? 'border-wine-400/60 bg-wine-500/15 text-wine-100'
-                        : 'border-white/10 bg-white/[0.03] text-stone-400 hover:bg-white/[0.06]',
-                    )}
-                  >
-                    {MODE_LABELS[value]}
-                  </button>
-                ))}
-              </div>
-            </fieldset>
-            <fieldset>
-              <legend className="mb-2 text-sm font-medium text-stone-300">
-                Шкала оценки
-              </legend>
-              <div className="grid grid-cols-2 gap-2">
-                {(['PARKER_100', 'STARS_5'] as const).map(
-                  (value) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setScaleType(value)}
-                      className={cn(
-                        'min-h-12 rounded-xl border px-3 text-sm font-medium transition',
-                        scaleType === value
-                          ? 'border-wine-400/60 bg-wine-500/15 text-wine-100'
-                          : 'border-white/10 bg-white/[0.03] text-stone-400 hover:bg-white/[0.06]',
-                      )}
-                    >
-                      {SCALE_LABELS[value]}
-                    </button>
-                  ),
-                )}
-              </div>
-            </fieldset>
-          </div>
+          <fieldset>
+            <legend className="mb-2 text-sm font-medium text-stone-300">
+              Режим
+            </legend>
+            <div className="grid grid-cols-2 gap-2">
+              {(['BLIND', 'OPEN'] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => handleModeChange(value)}
+                  className={cn(
+                    'min-h-12 rounded-xl border px-3 text-sm font-medium transition',
+                    mode === value
+                      ? 'border-wine-400/60 bg-wine-500/15 text-wine-100'
+                      : 'border-white/10 bg-white/[0.03] text-stone-400 hover:bg-white/[0.06]',
+                  )}
+                >
+                  {MODE_LABELS[value]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
 
           <div>
             <div className="mb-2 flex items-end justify-between gap-3">

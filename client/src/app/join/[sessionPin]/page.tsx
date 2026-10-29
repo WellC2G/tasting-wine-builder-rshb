@@ -16,7 +16,6 @@ import {
   Lock,
   MapPin,
   Send,
-  Star,
   UserRound,
   Wine as WineIcon,
 } from 'lucide-react';
@@ -113,7 +112,6 @@ const DEFAULT_GUEST_FORM: GuestRoundFormDraft = {
     body: 5,
     aromaIntensity: 5,
   },
-  stars: 3,
   selectedTags: [],
   notes: '',
 };
@@ -221,7 +219,6 @@ export default function GuestJoinPage() {
       body: 5,
       aromaIntensity: 5,
     });
-  const [stars, setStars] = useState(3);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
 
@@ -256,7 +253,6 @@ export default function GuestJoinPage() {
     setStoredFormDraft(roundId, {
       parker,
       organoleptics,
-      stars,
       selectedTags,
       notes,
     });
@@ -265,7 +261,6 @@ export default function GuestJoinPage() {
     phase,
     parker,
     organoleptics,
-    stars,
     selectedTags,
     notes,
   ]);
@@ -273,7 +268,6 @@ export default function GuestJoinPage() {
   const applyFormDraft = (draft: GuestRoundFormDraft): void => {
     setParker(draft.parker);
     setOrganoleptics(draft.organoleptics);
-    setStars(draft.stars);
     setSelectedTags(draft.selectedTags);
     setNotes(draft.notes);
     setSubmitError(null);
@@ -729,21 +723,15 @@ export default function GuestJoinPage() {
     setSubmitError(null);
 
     const payload: CreateRatingInput = {
+      parkerBreakdown: parker,
       organoleptics,
       aromaTags: selectedTags,
       personalNotes: notes.trim() || undefined,
     };
 
-    if (eventInfo.scaleType === 'STARS_5') {
-      payload.stars = stars;
-    } else {
-      payload.parkerBreakdown = parker;
-    }
-
     setStoredFormDraft(currentRound.roundId, {
       parker,
       organoleptics,
-      stars,
       selectedTags,
       notes,
     });
@@ -782,10 +770,7 @@ export default function GuestJoinPage() {
     }
   };
 
-  const isParker = eventInfo?.scaleType !== 'STARS_5';
-  const liveTotal = isParker
-    ? calculateParkerTotal(parker)
-    : Math.round((50 + 12.5 * (stars - 1)) * 10) / 10;
+  const liveTotal = calculateParkerTotal(parker);
   const liveCategory = getQualityCategory(liveTotal);
   const currentRoundNumber = currentRound?.orderNumber ?? 0;
   const remainingSeconds =
@@ -1154,59 +1139,24 @@ export default function GuestJoinPage() {
                 </span>
               </div>
 
-              {isParker ? (
-                <div className="mt-6 space-y-6">
-                  {PARKER_SLIDERS.map((slider) => (
-                    <RangeField
-                      key={slider.key}
-                      label={slider.label}
-                      hint={slider.hint}
-                      value={parker[slider.key]}
-                      min={0}
-                      max={slider.max}
-                      onChange={(value) =>
-                        setParker((current) => ({
-                          ...current,
-                          [slider.key]: value,
-                        }))
-                      }
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-6">
-                  <p className="text-sm font-medium text-stone-200">
-                    Оценка по 5-звёздочной шкале
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    {[1, 2, 3, 4, 5].map((value) => (
-                      <button
-                        key={value}
-                        type="button"
-                        onClick={() => setStars(value)}
-                        aria-label={`${value} звёзд`}
-                        className={cn(
-                          'flex min-h-12 flex-1 items-center justify-center rounded-xl border text-lg transition',
-                          stars >= value
-                            ? 'border-amber-300/50 bg-amber-300/15 text-amber-200'
-                            : 'border-white/10 bg-white/[0.03] text-stone-500',
-                        )}
-                      >
-                        <Star
-                          className={cn(
-                            'h-6 w-6',
-                            stars >= value && 'fill-current',
-                          )}
-                          aria-hidden="true"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <p className="mt-2 text-xs text-stone-500">
-                    {stars.toLocaleString('ru-RU')} из 5 звёзд
-                  </p>
-                </div>
-              )}
+              <div className="mt-6 space-y-6">
+                {PARKER_SLIDERS.map((slider) => (
+                  <RangeField
+                    key={slider.key}
+                    label={slider.label}
+                    hint={slider.hint}
+                    value={parker[slider.key]}
+                    min={0}
+                    max={slider.max}
+                    onChange={(value) =>
+                      setParker((current) => ({
+                        ...current,
+                        [slider.key]: value,
+                      }))
+                    }
+                  />
+                ))}
+              </div>
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">

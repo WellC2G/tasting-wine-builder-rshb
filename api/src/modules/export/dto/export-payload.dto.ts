@@ -67,7 +67,7 @@ export class ExportPayloadDto {
     example: ScaleType.PARKER_100,
   })
   @IsEnum(ScaleType, {
-    message: 'Шкала оценки должна быть PARKER_100 или STARS_5',
+    message: 'Шкала оценки должна быть PARKER_100',
   })
   scoringMethodology!: ScaleType;
 

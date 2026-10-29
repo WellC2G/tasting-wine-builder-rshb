@@ -27,19 +27,9 @@ export class RatingResponseDto {
 
   @ApiProperty({
     type: ParkerBreakdownDto,
-    nullable: true,
-    description:
-      'Разбивка по критериям Паркера. Для STARS_5 равна null.',
+    description: 'Разбивка по критериям Паркера.',
   })
-  parkerBreakdown!: ParkerBreakdownDto | null;
-
-  @ApiProperty({
-    type: Number,
-    nullable: true,
-    example: 4.5,
-    description: 'Исходная оценка в звёздах для STARS_5',
-  })
-  stars!: number | null;
+  parkerBreakdown!: ParkerBreakdownDto;
 
   @ApiProperty({ example: 94 })
   totalScore!: number;

@@ -1,5 +1,5 @@
 export type TastingMode = 'BLIND' | 'OPEN';
-export type ScaleType = 'PARKER_100' | 'STARS_5';
+export type ScaleType = 'PARKER_100';
 export type EventStatus = 'DRAFT' | 'ACTIVE' | 'FINISHED' | 'EXPORTED';
 export type RoundStatus =
   | 'PENDING'
@@ -228,8 +228,7 @@ export interface Organoleptics {
 }
 
 export interface CreateRatingInput {
-  parkerBreakdown?: ParkerBreakdown;
-  stars?: number;
+  parkerBreakdown: ParkerBreakdown;
   organoleptics: Organoleptics;
   aromaTags?: string[];
   personalNotes?: string;
@@ -241,8 +240,7 @@ export interface RatingResponse {
   participantId: string;
   scaleType: ScaleType;
   baseScore: number;
-  parkerBreakdown: ParkerBreakdown | null;
-  stars: number | null;
+  parkerBreakdown: ParkerBreakdown;
   totalScore: number;
   qualityCategory: ParkerQualityCategory;
   qualityLabel: string;

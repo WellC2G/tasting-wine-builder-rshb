@@ -35,7 +35,6 @@ export interface HardwareProfile {
 export interface GuestRoundFormDraft {
   parker: ParkerBreakdown;
   organoleptics: Organoleptics;
-  stars: number;
   selectedTags: string[];
   notes: string;
 }
@@ -54,7 +53,6 @@ const DEFAULT_GUEST_FORM_DRAFT: GuestRoundFormDraft = {
     body: 5,
     aromaIntensity: 5,
   },
-  stars: 3,
   selectedTags: [],
   notes: '',
 };
@@ -63,7 +61,6 @@ function cloneDefaultFormDraft(): GuestRoundFormDraft {
   return {
     parker: { ...DEFAULT_GUEST_FORM_DRAFT.parker },
     organoleptics: { ...DEFAULT_GUEST_FORM_DRAFT.organoleptics },
-    stars: DEFAULT_GUEST_FORM_DRAFT.stars,
     selectedTags: [],
     notes: '',
   };
@@ -403,7 +400,6 @@ export function getStoredFormDraft(
     typeof draft !== 'object' ||
     !draft.parker ||
     !draft.organoleptics ||
-    typeof draft.stars !== 'number' ||
     !Array.isArray(draft.selectedTags) ||
     typeof draft.notes !== 'string'
   ) {
@@ -442,7 +438,6 @@ export function restoreFormForRound(
       parker: rating.parkerBreakdown ?? defaults.parker,
       organoleptics:
         rating.organoleptics ?? defaults.organoleptics,
-      stars: rating.stars ?? defaults.stars,
       selectedTags: rating.aromaTags ?? [],
       notes: rating.personalNotes ?? '',
     };

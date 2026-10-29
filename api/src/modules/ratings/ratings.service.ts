@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ForbiddenException,
   HttpException,
   Injectable,
@@ -10,10 +9,7 @@ import { Repository } from 'typeorm';
 
 import { isUniqueViolation } from '../../common/database/is-unique-violation';
 import { Participant } from '../auth/entities/participant.entity';
-import {
-  ScaleType,
-  TastingMode,
-} from '../events/entities/tasting-event.entity';
+import { TastingMode } from '../events/entities/tasting-event.entity';
 import {
   TastingRound,
   TastingRoundStatus,
@@ -75,35 +71,13 @@ export class RatingsService {
     });
 
     const scaleType = round.event.scaleType;
-    let totalScore: number;
-    let appearanceScore: number | null = null;
-    let aromaScore: number | null = null;
-    let tasteScore: number | null = null;
-    let potentialScore: number | null = null;
-
-    if (scaleType === ScaleType.PARKER_100) {
-      if (!dto.parkerBreakdown) {
-        throw new BadRequestException(
-          'Для шкалы PARKER_100 заполните оценки по критериям Паркера',
-        );
-      }
-
-      totalScore = this.calculator.calculateParkerTotal(
-        dto.parkerBreakdown,
-      );
-      appearanceScore = dto.parkerBreakdown.appearance;
-      aromaScore = dto.parkerBreakdown.aroma;
-      tasteScore = dto.parkerBreakdown.taste;
-      potentialScore = dto.parkerBreakdown.potential;
-    } else {
-      if (dto.stars === undefined) {
-        throw new BadRequestException(
-          'Для шкалы STARS_5 укажите оценку от 1 до 5 звёзд',
-        );
-      }
-
-      totalScore = this.calculator.projectStarsToParker(dto.stars);
-    }
+    const totalScore = this.calculator.calculateParkerTotal(
+      dto.parkerBreakdown,
+    );
+    const appearanceScore = dto.parkerBreakdown.appearance;
+    const aromaScore = dto.parkerBreakdown.aroma;
+    const tasteScore = dto.parkerBreakdown.taste;
+    const potentialScore = dto.parkerBreakdown.potential;
 
     const qualityCategory: ParkerQualityCategory =
       this.calculator.getQualityCategory(totalScore);
@@ -180,14 +154,7 @@ export class RatingsService {
       participantId: participant.id,
       scaleType,
       baseScore: 50,
-      parkerBreakdown:
-        scaleType === ScaleType.PARKER_100
-          ? dto.parkerBreakdown ?? null
-          : null,
-      stars:
-        scaleType === ScaleType.STARS_5
-          ? dto.stars ?? null
-          : null,
+      parkerBreakdown: dto.parkerBreakdown,
       totalScore,
       qualityCategory,
       qualityLabel:

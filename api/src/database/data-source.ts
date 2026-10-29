@@ -16,6 +16,7 @@ import { RatingsSchema1792950279937 } from './migrations/1792950279937-RatingsSc
 import { ExportLogsSchema1792951008275 } from './migrations/1792951008275-ExportLogsSchema';
 import { ParticipantNetworkIdentity1793140634953 } from './migrations/1793140634953-ParticipantNetworkIdentity';
 import { WineCatalogUpdates1793226948059 } from './migrations/1793226948059-WineCatalogUpdates';
+import { RemoveStarsScale1793232483938 } from './migrations/1793232483938-RemoveStarsScale';
 
 // Support both `api/.env` and the repository-level `.env` when running the
 // TypeORM CLI from the api directory. Existing values are never overwritten.
@@ -66,6 +67,7 @@ const AppDataSource = new DataSource({
     ExportLogsSchema1792951008275,
     ParticipantNetworkIdentity1793140634953,
     WineCatalogUpdates1793226948059,
+    RemoveStarsScale1793232483938,
   ],
   migrationsRun: false,
   synchronize: false,

@@ -59,7 +59,7 @@ export class CreateEventDto {
   })
   @IsOptional()
   @IsEnum(ScaleType, {
-    message: 'Шкала должна быть одной из: PARKER_100, STARS_5',
+    message: 'Шкала должна быть PARKER_100',
   })
   scaleType?: ScaleType;
 

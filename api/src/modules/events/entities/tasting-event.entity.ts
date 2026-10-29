@@ -21,7 +21,6 @@ export enum TastingMode {
 
 export enum ScaleType {
   PARKER_100 = 'PARKER_100',
-  STARS_5 = 'STARS_5',
 }
 
 export enum TastingEventStatus {

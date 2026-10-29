@@ -30,7 +30,6 @@ export const MODE_LABELS: Record<TastingMode, string> = {
 
 export const SCALE_LABELS: Record<ScaleType, string> = {
   PARKER_100: 'Паркер 100',
-  STARS_5: '5 звёзд',
 };
 
 export const WINE_TYPE_LABELS: Record<WineType, string> = {

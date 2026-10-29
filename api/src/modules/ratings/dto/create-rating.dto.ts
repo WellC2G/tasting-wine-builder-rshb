@@ -4,12 +4,10 @@ import type { TransformFnParams } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsNumber,
+  IsDefined,
   IsOptional,
   IsString,
-  Max,
   MaxLength,
-  Min,
   ValidateNested,
 } from 'class-validator';
 
@@ -36,34 +34,17 @@ const trimOptionalString = ({ value }: TransformFnParams): unknown => {
 };
 
 export class CreateRatingDto {
-  @ApiPropertyOptional({
+  @ApiProperty({
     type: ParkerBreakdownDto,
     description:
-      'Разбивка оценки по 100-балльной шкале Паркера. Обязательна для PARKER_100.',
+      'Разбивка оценки по 100-балльной шкале Паркера. Обязательное поле.',
   })
-  @IsOptional()
+  @IsDefined({
+    message: 'Заполните оценки по критериям Паркера',
+  })
   @ValidateNested()
   @Type(() => ParkerBreakdownDto)
-  parkerBreakdown?: ParkerBreakdownDto;
-
-  @ApiPropertyOptional({
-    description:
-      'Оценка по 5-звёздочной шкале. Обязательна для STARS_5.',
-    example: 4.5,
-    minimum: 1,
-    maximum: 5,
-  })
-  @IsOptional()
-  @IsNumber(
-    { maxDecimalPlaces: 1 },
-    {
-      message:
-        'Оценка в звёздах должна быть числом не более чем с одним знаком после запятой',
-    },
-  )
-  @Min(1, { message: 'Оценка в звёздах должна быть от 1 до 5' })
-  @Max(5, { message: 'Оценка в звёздах должна быть от 1 до 5' })
-  stars?: number;
+  parkerBreakdown!: ParkerBreakdownDto;
 
   @ApiProperty({
     type: OrganolepticsDto,

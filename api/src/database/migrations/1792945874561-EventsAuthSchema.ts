@@ -11,7 +11,7 @@ export class EventsAuthSchema1792945874561 implements MigrationInterface {
       `CREATE TYPE "public"."tasting_mode_enum" AS ENUM('BLIND', 'OPEN')`,
     );
     await queryRunner.query(
-      `CREATE TYPE "public"."tasting_scale_type_enum" AS ENUM('PARKER_100', 'STARS_5')`,
+      `CREATE TYPE "public"."tasting_scale_type_enum" AS ENUM('PARKER_100')`,
     );
     await queryRunner.query(
       `CREATE TYPE "public"."tasting_event_status_enum" AS ENUM('DRAFT', 'ACTIVE', 'FINISHED', 'EXPORTED')`,

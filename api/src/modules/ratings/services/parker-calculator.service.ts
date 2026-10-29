@@ -35,12 +35,6 @@ export class ParkerScoreCalculator {
     return Math.round(total * 10) / 10;
   }
 
-  projectStarsToParker(stars: number): number {
-    const normalized = 50 + 12.5 * (stars - 1);
-
-    return Math.round(normalized * 10) / 10;
-  }
-
   getQualityCategory(score: number): ParkerQualityCategory {
     if (!Number.isFinite(score) || score < 50 || score > 100) {
       throw new RangeError(

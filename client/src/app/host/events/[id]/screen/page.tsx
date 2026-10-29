@@ -433,7 +433,7 @@ function SummaryView({
       ) : (
         <div
           key={page}
-          className="grid min-h-0 flex-1 animate-fade-in grid-cols-3 auto-rows-fr gap-4"
+          className="grid h-full min-h-0 flex-1 animate-fade-in grid-cols-3 grid-rows-3 gap-4"
         >
           {pageItems.map((item) => {
             const revealed = item.isWineRevealed && item.wine;
@@ -441,7 +441,7 @@ function SummaryView({
             return (
               <article
                 key={item.roundId}
-                className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-wine-950/45 via-stone-900/70 to-stone-950 p-4"
+                className="flex h-full min-h-0 flex-col justify-between overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-wine-950/45 via-stone-900/70 to-stone-950 p-4"
               >
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-wine-500/10 text-wine-300">

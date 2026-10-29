@@ -1023,6 +1023,11 @@ export default function HostControlPage() {
       : rounds
           .filter((round) => round.status !== 'SKIPPED')
           .every((round) => round.isWineRevealed));
+  const currentRoundIndex = selectedRound
+    ? rounds.findIndex((round) => round.id === selectedRound.id)
+    : -1;
+  const roundNavigationDisabled =
+    controlsDisabled || roundInProgress !== null;
 
   const handleSelectRound = (round: EventRound) => {
     if (
@@ -1733,14 +1738,61 @@ export default function HostControlPage() {
               ) : null}
             </div>
             {selectedRound ? (
-              <span
-                className={cn(
-                  'inline-flex min-h-9 items-center self-start rounded-full border px-3 text-xs font-medium sm:self-auto',
-                  roundStatusTone(selectedRound.status),
-                )}
-              >
-                {ROUND_STATUS_LABELS[selectedRound.status]}
-              </span>
+              <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="control-prev-round"
+                    onClick={() =>
+                      currentRoundIndex > 0 &&
+                      handleSelectRound(rounds[currentRoundIndex - 1])
+                    }
+                    disabled={
+                      roundNavigationDisabled ||
+                      currentRoundIndex <= 0
+                    }
+                    aria-label="Предыдущий образец"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-stone-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <ChevronLeft
+                      className="h-5 w-5"
+                      aria-hidden="true"
+                    />
+                  </button>
+                  <span className="min-w-14 text-center font-mono text-xs text-stone-400">
+                    {currentRoundIndex + 1} / {rounds.length}
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="control-next-round"
+                    onClick={() =>
+                      currentRoundIndex >= 0 &&
+                      currentRoundIndex < rounds.length - 1 &&
+                      handleSelectRound(rounds[currentRoundIndex + 1])
+                    }
+                    disabled={
+                      roundNavigationDisabled ||
+                      currentRoundIndex < 0 ||
+                      currentRoundIndex >= rounds.length - 1
+                    }
+                    aria-label="Следующий образец"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-stone-300 transition hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-35"
+                  >
+                    <ChevronRight
+                      className="h-5 w-5"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+                <span
+                  className={cn(
+                    'inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium',
+                    roundStatusTone(selectedRound.status),
+                  )}
+                >
+                  {ROUND_STATUS_LABELS[selectedRound.status]}
+                </span>
+              </div>
             ) : null}
           </div>
 
@@ -2005,7 +2057,7 @@ export default function HostControlPage() {
                     className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    +30 сек
+                    30 сек
                   </button>
                   <button
                     type="button"
@@ -2015,7 +2067,7 @@ export default function HostControlPage() {
                     className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    +1 мин
+                    1 мин
                   </button>
                 </div>
               ) : null}

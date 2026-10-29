@@ -21,6 +21,7 @@ export interface GuestSession {
   token: string;
   nickname: string;
   participantId: string;
+  eventId?: string;
 }
 
 export interface HardwareProfile {

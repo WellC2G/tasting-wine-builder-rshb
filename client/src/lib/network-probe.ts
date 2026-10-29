@@ -139,28 +139,6 @@ function parseIceCandidate(candidate: RTCIceCandidate): {
   };
 }
 
-function isVpnWebRtcRange(ip: string): boolean {
-  if (!isIpv4(ip)) {
-    return false;
-  }
-
-  const [first, second] = ip.split('.').map(Number);
-
-  return first === 100 && second >= 64 && second <= 127;
-}
-
-function isSecondaryPrivateRange(ip: string): boolean {
-  if (!isIpv4(ip)) {
-    return false;
-  }
-
-  const [first, second] = ip.split('.').map(Number);
-
-  return (
-    first === 10 || (first === 172 && second >= 16 && second <= 31)
-  );
-}
-
 export async function probeWebRtcNetwork(): Promise<WebRtcProbeResult> {
   if (
     typeof window === 'undefined' ||
@@ -234,31 +212,27 @@ export async function probeWebRtcNetwork(): Promise<WebRtcProbeResult> {
     peer?.close();
   }
 
-  const localIpList = [...localIps];
-  const hostname = window.location.hostname;
-  const hostnameIsLocalLan = hostname.startsWith('192.168.');
-  const vpnSuspected =
-    localIpList.some((ip) => isVpnWebRtcRange(ip)) ||
-    (hostnameIsLocalLan &&
-      localIpList.some((ip) => isSecondaryPrivateRange(ip)));
-
   return {
     publicIp,
-    localIps: localIpList,
-    vpnSuspected,
+    localIps: [...localIps],
+    vpnSuspected: false,
   };
 }
 
 export async function probeClientNetwork(): Promise<ClientNetworkProbe> {
   const [httpPublicIp, webrtc] = await Promise.all([
-    probeHttpPublicIp(),
-    probeWebRtcNetwork(),
+    probeHttpPublicIp().catch(() => null),
+    probeWebRtcNetwork().catch(() => ({
+      publicIp: null,
+      localIps: [],
+      vpnSuspected: false,
+    })),
   ]);
 
   return {
     httpPublicIp,
     webrtcPublicIp: webrtc.publicIp,
     webrtcLocalIps: webrtc.localIps,
-    vpnSuspectedByWebrtc: webrtc.vpnSuspected,
+    vpnSuspectedByWebrtc: false,
   };
 }

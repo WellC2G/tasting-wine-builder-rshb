@@ -189,6 +189,9 @@ export default function GuestJoinPage() {
   const [nickname, setNickname] = useState('');
   const [screenResolution, setScreenResolution] = useState('');
   const [guestToken, setGuestToken] = useState<string | null>(null);
+  const [sessionEventId, setSessionEventId] = useState<string | null>(
+    null,
+  );
   const [eventInfo, setEventInfo] = useState<GuestEventInfo | null>(
     null,
   );
@@ -222,6 +225,7 @@ export default function GuestJoinPage() {
   );
   const [toast, setToast] = useState<ToastState>(null);
   const autoJoinRef = useRef(false);
+  const identityRefreshConnectRef = useRef(-1);
 
   const [parker, setParker] = useState<ParkerBreakdown>({
     appearance: 3,
@@ -319,6 +323,7 @@ export default function GuestJoinPage() {
     status?: EventStatus,
   ) => {
     setEventInfo(info);
+    setSessionEventId(info.eventId);
     setWine(null);
     setStats(null);
     setSubmitError(null);
@@ -434,7 +439,10 @@ export default function GuestJoinPage() {
     }
   };
 
-  const joinSession = async (nicknameValue: string) => {
+  const joinSession = async (
+    nicknameValue: string,
+    preserveOnNetworkError = false,
+  ) => {
     const trimmedNickname = nicknameValue.trim();
 
     if (!trimmedNickname) {
@@ -474,13 +482,45 @@ export default function GuestJoinPage() {
 
       setNickname(trimmedNickname);
       setGuestToken(response.guestSessionToken);
+      setSessionEventId(response.event.eventId);
       setGuestSession(sessionPin, {
         token: response.guestSessionToken,
         nickname: trimmedNickname,
         participantId: response.participantId,
+        eventId: response.event.eventId,
       });
       await hydrateEvent(response.event, response.guestSessionToken);
     } catch (error) {
+      const status = error instanceof ApiError ? error.status : null;
+      const isNetworkError =
+        !(error instanceof ApiError) ||
+        error.status === 0 ||
+        error.status >= 500;
+      const hasStoredSession = Boolean(
+        getGuestSession(sessionPin),
+      );
+
+      if (preserveOnNetworkError && isNetworkError) {
+        setJoinError(null);
+        setWaitingMessage(
+          'Восстанавливаем подключение к дегустации…',
+        );
+        setPhase('waiting');
+        return;
+      }
+
+      if (
+        (guestToken || hasStoredSession) &&
+        (status === 401 || status === 403 || status === 404)
+      ) {
+        clearGuestSession(sessionPin);
+        setGuestToken(null);
+        setRemovedMessage(
+          'Вы были удалены организатором из текущей дегустации.',
+        );
+        return;
+      }
+
       setJoinError(getApiErrorMessage(error));
       setPhase('join');
     } finally {
@@ -501,12 +541,51 @@ export default function GuestJoinPage() {
 
     if (stored) {
       setNickname(stored.nickname);
-      void joinSession(stored.nickname);
+      setGuestToken(stored.token);
+      setSessionEventId(stored.eventId ?? null);
+      setPhase('loading');
+
+      if (!stored.eventId) {
+        void joinSession(stored.nickname, true);
+      }
     } else {
       setPhase('join');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionPin]);
+
+  useEffect(() => {
+    if (
+      !socket ||
+      !guestToken ||
+      sessionEventId ||
+      connectCount === 0 ||
+      joining
+    ) {
+      return;
+    }
+
+    const stored = getGuestSession(sessionPin);
+
+    if (!stored) {
+      return;
+    }
+
+    if (identityRefreshConnectRef.current === connectCount) {
+      return;
+    }
+
+    identityRefreshConnectRef.current = connectCount;
+    void joinSession(stored.nickname, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    socket,
+    connectCount,
+    guestToken,
+    sessionEventId,
+    joining,
+    sessionPin,
+  ]);
 
   useEffect(() => {
     if (!socket) {
@@ -839,44 +918,58 @@ export default function GuestJoinPage() {
   }, [socket, eventInfo?.eventId, sessionPin]);
 
   useEffect(() => {
-    if (
-      !socket ||
-      !guestToken ||
-      !eventInfo?.eventId ||
-      connectCount === 0
-    ) {
+    if (!guestToken || !sessionEventId) {
       return;
     }
 
     let cancelled = false;
 
     apiClient.events
-      .liveState(eventInfo.eventId, guestToken)
+      .liveState(sessionEventId, guestToken)
       .then(async (live) => {
         if (!cancelled) {
           await hydrateLiveState(live, guestToken);
         }
       })
       .catch((error: unknown) => {
+        if (cancelled) {
+          return;
+        }
+
         if (
-          !cancelled &&
           error instanceof ApiError &&
-          (error.status === 401 || error.status === 404)
+          (error.status === 401 ||
+            error.status === 403 ||
+            error.status === 404)
         ) {
           clearGuestSession(sessionPin);
           setGuestToken(null);
           setRemovedMessage(
             'Вы были удалены организатором из текущей дегустации.',
           );
-          socket.disconnect();
+          socket?.disconnect();
+          return;
         }
+
+        setWaitingMessage(
+          'Соединение потеряно. Переподключаемся…',
+        );
+        setPhase((current) =>
+          current === 'loading' ? 'waiting' : current,
+        );
       });
 
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, connectCount, guestToken, eventInfo?.eventId, sessionPin]);
+  }, [
+    socket,
+    connectCount,
+    guestToken,
+    sessionEventId,
+    sessionPin,
+  ]);
 
   const handleJoinSubmit = async (
     event: React.FormEvent<HTMLFormElement>,

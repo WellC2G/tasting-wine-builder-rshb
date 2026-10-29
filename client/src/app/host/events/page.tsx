@@ -601,15 +601,18 @@ export default function HostEventsPage() {
               выводите результаты на большой экран.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-row flex-wrap items-center justify-start gap-2.5 sm:justify-end">
             <button
               type="button"
               onClick={() => void loadEvents(true)}
               disabled={refreshing}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-60"
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-white/10 px-4 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-60"
             >
               <RefreshCw
-                className={cn('h-4 w-4', refreshing && 'animate-spin')}
+                className={cn(
+                  'h-4 w-4 shrink-0',
+                  refreshing && 'animate-spin',
+                )}
                 aria-hidden="true"
               />
               Обновить
@@ -618,18 +621,21 @@ export default function HostEventsPage() {
               type="button"
               data-testid="catalog-open"
               onClick={openCatalogModal}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-white/10 px-4 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border border-white/10 px-4 text-sm font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
             >
-              <WineIcon className="h-4 w-4" aria-hidden="true" />
+              <WineIcon
+                className="h-4 w-4 shrink-0"
+                aria-hidden="true"
+              />
               Каталог вин
             </button>
             <button
               type="button"
               data-testid="create-event-open"
               onClick={openCreateModal}
-              className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500"
+              className="inline-flex min-h-12 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500"
             >
-              <Plus className="h-4 w-4" aria-hidden="true" />
+              <Plus className="h-4 w-4 shrink-0" aria-hidden="true" />
               Создать дегустацию
             </button>
           </div>
@@ -745,18 +751,18 @@ export default function HostEventsPage() {
                     </Link>
                   </div>
 
-                  <div className="mt-2 grid grid-cols-3 gap-2">
+                  <div className="mt-2 grid grid-cols-3 gap-1.5">
                     {event.status === 'DRAFT' ? (
                       <button
                         type="button"
                         onClick={() => void openEditEvent(event)}
-                        className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white sm:text-sm"
+                        className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
                       >
                         <Pencil
                           className="h-3.5 w-3.5 shrink-0"
                           aria-hidden="true"
                         />
-                        Изменить
+                        <span className="truncate">Изменить</span>
                       </button>
                     ) : (
                       <button
@@ -764,7 +770,7 @@ export default function HostEventsPage() {
                         onClick={() => void handleExport(event)}
                         disabled={exportingEventId === event.id}
                         title="Выгрузить в Народный рейтинг"
-                        className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-wine-400/30 bg-wine-500/10 px-2 text-xs font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50 sm:text-sm"
+                        className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xl border border-wine-400/30 bg-wine-500/10 px-2 text-xs font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50"
                       >
                         {exportingEventId === event.id ? (
                           <Loader2
@@ -777,7 +783,7 @@ export default function HostEventsPage() {
                             aria-hidden="true"
                           />
                         )}
-                        В рейтинг
+                        <span className="truncate">В рейтинг</span>
                       </button>
                     )}
 
@@ -785,7 +791,7 @@ export default function HostEventsPage() {
                       type="button"
                       onClick={() => void handleCopy(event)}
                       disabled={copyingEventId === event.id}
-                      className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-50 sm:text-sm"
+                      className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
                     >
                       {copyingEventId === event.id ? (
                         <Loader2
@@ -798,19 +804,19 @@ export default function HostEventsPage() {
                           aria-hidden="true"
                         />
                       )}
-                      Копировать
+                      <span className="truncate">Копировать</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(event)}
-                      className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-400/20 px-2 text-xs font-medium text-rose-200 transition hover:bg-rose-400/10 sm:text-sm"
+                      className="inline-flex min-h-10 min-w-0 items-center justify-center gap-1.5 overflow-hidden whitespace-nowrap rounded-xl border border-rose-400/20 px-2 text-xs font-medium text-rose-200 transition hover:bg-rose-400/10"
                     >
                       <Trash2
                         className="h-3.5 w-3.5 shrink-0"
                         aria-hidden="true"
                       />
-                      Удалить
+                      <span className="truncate">Удалить</span>
                     </button>
                   </div>
                 </div>

@@ -342,18 +342,20 @@ interface StatsViewProps {
 
 function StatsView({ round, wine, stats }: StatsViewProps) {
   return (
-    <div className="flex h-full min-h-0 flex-col gap-5">
-      <div className="grid shrink-0 grid-cols-[1.2fr_0.8fr] gap-5">
-        <div className="min-w-0">
-          <p className="mb-2 text-xs uppercase tracking-[0.24em] text-wine-300">
-            Образец раскрыт · {round.blindLabel}
-          </p>
-          <div data-testid="screen-revealed-wine">
-            <WineDetailsCard wine={wine} />
-          </div>
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <p className="shrink-0 text-xs uppercase tracking-[0.24em] text-wine-300">
+        Образец раскрыт · {round.blindLabel}
+      </p>
+
+      <div className="grid shrink-0 grid-cols-[1.15fr_0.85fr] items-stretch gap-6">
+        <div
+          data-testid="screen-revealed-wine"
+          className="flex h-full min-w-0 items-center"
+        >
+          <WineDetailsCard wine={wine} large className="h-full w-full" />
         </div>
 
-        <div className="flex flex-col justify-center rounded-3xl border border-wine-400/20 bg-wine-500/10 p-5">
+        <div className="flex h-full flex-col justify-center rounded-3xl border border-wine-400/20 bg-wine-500/10 p-6">
           <p className="text-[11px] uppercase tracking-[0.18em] text-wine-300">
             Оценка Роберта Паркера
           </p>

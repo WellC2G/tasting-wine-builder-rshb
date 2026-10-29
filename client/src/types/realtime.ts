@@ -3,6 +3,8 @@ import type {
   RevealedWine,
   RoundStats,
   ScaleType,
+  SummaryRoundItem,
+  TastingMode,
 } from './api';
 
 export interface RoundStartedPayload {
@@ -58,6 +60,7 @@ export interface BottleRevealedPayload {
   wine: RevealedWine | null;
   stats: RoundStats;
   isWineRevealed: boolean;
+  reason: 'revealed' | 'stats';
   message: string;
 }
 
@@ -68,7 +71,25 @@ export interface RoundCompletedPayload {
   wine: RevealedWine | null;
   stats: RoundStats;
   isWineRevealed: boolean;
+  reason: 'completed';
   message: string;
+}
+
+export interface SummaryStatsShownPayload {
+  eventId: string;
+  mode: TastingMode;
+  page: number;
+  items: SummaryRoundItem[];
+}
+
+export interface SummaryPageChangedPayload {
+  eventId: string;
+  page: number;
+}
+
+export interface AllBottlesRevealedPayload {
+  eventId: string;
+  items: SummaryRoundItem[];
 }
 
 export interface ParticipantCounterPayload {
@@ -132,6 +153,9 @@ export interface ServerToClientEvents {
   bottle_revealed: (payload: BottleRevealedPayload) => void;
   event_status_updated: (payload: EventStatusUpdatedPayload) => void;
   event_finished: (payload: EventFinishedPayload) => void;
+  summary_stats_shown: (payload: SummaryStatsShownPayload) => void;
+  summary_page_changed: (payload: SummaryPageChangedPayload) => void;
+  all_bottles_revealed: (payload: AllBottlesRevealedPayload) => void;
   participant_counter_updated: (
     payload: ParticipantCounterPayload,
   ) => void;
@@ -146,6 +170,15 @@ export interface ClientToServerEvents {
   'host:join_event': (payload: JoinEventPayload) => void;
   'host:start_event': (payload: JoinEventPayload) => void;
   'host:finish_event': (payload: JoinEventPayload) => void;
+  'host:show_summary': (payload: {
+    eventId: string;
+    page?: number;
+  }) => void;
+  'host:summary_page_change': (payload: {
+    eventId: string;
+    page: number;
+  }) => void;
+  'host:reveal_all_bottles': (payload: JoinEventPayload) => void;
   'host:remove_participant': (payload: {
     eventId: string;
     participantId: string;

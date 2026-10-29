@@ -6,6 +6,8 @@ import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
   Award,
+  ChevronLeft,
+  ChevronRight,
   Grape,
   Hash,
   Hourglass,
@@ -54,8 +56,11 @@ import type {
   LiveStateRound,
   RevealedWine,
   RoundStats,
+  SummaryRoundItem,
+  SummaryRoundStats,
 } from '@/types/api';
 import type {
+  AllBottlesRevealedPayload,
   BottleRevealedPayload,
   EventFinishedPayload,
   EventStatusUpdatedPayload,
@@ -66,6 +71,8 @@ import type {
   RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
+  SummaryPageChangedPayload,
+  SummaryStatsShownPayload,
   VotingClosedPayload,
 } from '@/types/realtime';
 
@@ -74,7 +81,21 @@ type ToastState = {
   tone: 'info' | 'success' | 'error';
 } | null;
 
-type Presentation = 'live' | 'stats' | 'finished';
+type Presentation = 'live' | 'stats' | 'summary' | 'finished';
+
+const SUMMARY_PAGE_SIZE = 9;
+
+function toSummaryStats(stats: RoundStats): SummaryRoundStats {
+  return {
+    totalRatings: stats.totalRatings,
+    validVotesCount: stats.validVotesCount,
+    outliersRemovedCount: stats.outliersRemovedCount,
+    meanScore: stats.meanScore,
+    medianScore: stats.medianScore,
+    qualityCategory: stats.qualityCategory,
+    qualityLabel: stats.qualityLabel,
+  };
+}
 
 const STAGE_WIDTH = 1920;
 const STAGE_HEIGHT = 1080;
@@ -336,6 +357,194 @@ function LiveView({
   );
 }
 
+interface SummaryViewProps {
+  items: SummaryRoundItem[];
+  page: number;
+  onPageChange: (page: number) => void;
+}
+
+function SummaryView({
+  items,
+  page,
+  onPageChange,
+}: SummaryViewProps) {
+  const totalPages = Math.max(
+    1,
+    Math.ceil(items.length / SUMMARY_PAGE_SIZE),
+  );
+  const pageItems = items.slice(
+    (page - 1) * SUMMARY_PAGE_SIZE,
+    page * SUMMARY_PAGE_SIZE,
+  );
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="flex shrink-0 items-center justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-wine-300">
+            Итоги дегустации
+          </p>
+          <h2 className="mt-1 text-4xl font-semibold tracking-tight text-white">
+            Общая статистика всех образцов
+          </h2>
+        </div>
+
+        {totalPages > 1 ? (
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => onPageChange(page - 1)}
+              disabled={page <= 1}
+              aria-label="Предыдущая страница"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-stone-200 transition hover:bg-white/5 disabled:opacity-35"
+            >
+              <ChevronLeft className="h-5 w-5" aria-hidden="true" />
+            </button>
+            <span className="min-w-44 text-center text-sm text-stone-400">
+              Страница {page} из {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => onPageChange(page + 1)}
+              disabled={page >= totalPages}
+              aria-label="Следующая страница"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 text-stone-200 transition hover:bg-white/5 disabled:opacity-35"
+            >
+              <ChevronRight className="h-5 w-5" aria-hidden="true" />
+            </button>
+          </div>
+        ) : (
+          <span className="text-sm text-stone-500">
+            {items.length}{' '}
+            {pluralize(
+              items.length,
+              'образец',
+              'образца',
+              'образцов',
+            )}
+          </span>
+        )}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center rounded-3xl border border-dashed border-white/10 text-lg text-stone-500">
+          Итоговая статистика пока недоступна
+        </div>
+      ) : (
+        <div
+          key={page}
+          className="grid min-h-0 flex-1 animate-fade-in grid-cols-3 auto-rows-fr gap-4"
+        >
+          {pageItems.map((item) => {
+            const revealed = item.isWineRevealed && item.wine;
+
+            return (
+              <article
+                key={item.roundId}
+                className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-wine-950/45 via-stone-900/70 to-stone-950 p-4"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-wine-500/10 text-wine-300">
+                    {revealed ? (
+                      <WineImage
+                        src={revealed.imageUrl}
+                        alt={revealed.name}
+                        iconClassName="h-7 w-7"
+                      />
+                    ) : (
+                      <WineIcon
+                        className="h-8 w-8"
+                        strokeWidth={1.2}
+                        aria-hidden="true"
+                      />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    {revealed ? (
+                      <>
+                        <div className="flex flex-wrap gap-1.5 text-[10px]">
+                          <span className="rounded-full border border-wine-400/20 bg-wine-500/10 px-2 py-0.5 text-wine-100">
+                            {WINE_TYPE_LABELS[revealed.wineType]}
+                          </span>
+                          <span className="rounded-full border border-white/10 px-2 py-0.5 text-stone-400">
+                            {revealed.vintage}
+                          </span>
+                        </div>
+                        <h3 className="mt-1 truncate text-lg font-semibold text-white">
+                          {revealed.name}
+                        </h3>
+                        <p className="truncate text-xs text-wine-200">
+                          {revealed.winery}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
+                          Слепой образец · не раскрыт
+                        </p>
+                        <h3 className="mt-1 truncate text-xl font-semibold text-white">
+                          {item.blindLabel}
+                        </h3>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-3 min-h-0 flex-1 space-y-1.5 text-[11px] leading-4 text-stone-400">
+                  {revealed ? (
+                    <>
+                      <p className="truncate">
+                        <span className="text-stone-500">Регион: </span>
+                        {revealed.region}
+                      </p>
+                      <p className="line-clamp-2">
+                        <span className="text-stone-500">Сорта: </span>
+                        {revealed.grapeVarieties}
+                      </p>
+                      <p className="truncate">
+                        <span className="text-stone-500">Цена: </span>
+                        {formatPrice(revealed.retailPrice)}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-stone-500">
+                      Название и карточка появятся после раскрытия.
+                    </p>
+                  )}
+                </div>
+
+                <div className="mt-auto flex items-end justify-between gap-2 border-t border-white/10 pt-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                      Средний балл
+                    </p>
+                    <p className="text-3xl font-semibold leading-none text-wine-200">
+                      {item.stats.meanScore !== null
+                        ? item.stats.meanScore.toLocaleString(
+                            'ru-RU',
+                            { maximumFractionDigits: 1 },
+                          )
+                        : '—'}
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      'max-w-[55%] truncate rounded-full border px-2 py-1 text-[10px] font-medium',
+                      qualityTone(item.stats.qualityCategory),
+                    )}
+                  >
+                    {item.stats.qualityLabel ?? 'Без категории'}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface StatsViewProps {
   round: LiveStateRound;
   wine: RevealedWine | null;
@@ -588,6 +797,10 @@ export default function PresentationScreenPage() {
     useState<Presentation>('live');
   const [wine, setWine] = useState<RevealedWine | null>(null);
   const [stats, setStats] = useState<RoundStats | null>(null);
+  const [summaryItems, setSummaryItems] = useState<
+    SummaryRoundItem[]
+  >([]);
+  const [summaryPage, setSummaryPage] = useState(1);
   const [counts, setCounts] = useState<ParticipantCounterPayload>({
     eventId,
     roundId: null,
@@ -832,7 +1045,27 @@ export default function PresentationScreenPage() {
     const applyCompletedRound = (
       payload: BottleRevealedPayload | RoundCompletedPayload,
     ) => {
-      setPresentation('stats');
+      setPresentation((current) =>
+        payload.reason === 'revealed' && current === 'summary'
+          ? 'summary'
+          : 'stats',
+      );
+      setSummaryItems((current) =>
+        current.map((item) =>
+          item.roundId === payload.roundId
+            ? {
+                ...item,
+                status: 'REVEALED',
+                isWineRevealed:
+                  payload.isWineRevealed || item.isWineRevealed,
+                wine: payload.isWineRevealed
+                  ? payload.wine
+                  : item.wine,
+                stats: toSummaryStats(payload.stats),
+              }
+            : item,
+        ),
+      );
       setRound((current) => ({
         roundId: payload.roundId,
         orderNumber:
@@ -875,6 +1108,40 @@ export default function PresentationScreenPage() {
       payload: BottleRevealedPayload,
     ) => {
       applyCompletedRound(payload);
+    };
+
+    const handleSummaryStatsShown = (
+      payload: SummaryStatsShownPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setSummaryPage(payload.page);
+      setPresentation('summary');
+    };
+
+    const handleSummaryPageChanged = (
+      payload: SummaryPageChangedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryPage(payload.page);
+      setPresentation('summary');
+    };
+
+    const handleAllBottlesRevealed = (
+      payload: AllBottlesRevealedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setPresentation('summary');
     };
 
     const handleEventStatusUpdated = (
@@ -959,6 +1226,9 @@ export default function PresentationScreenPage() {
     socket.on('bottle_revealed', handleBottleRevealed);
     socket.on('event_status_updated', handleEventStatusUpdated);
     socket.on('event_finished', handleEventFinished);
+    socket.on('summary_stats_shown', handleSummaryStatsShown);
+    socket.on('summary_page_changed', handleSummaryPageChanged);
+    socket.on('all_bottles_revealed', handleAllBottlesRevealed);
     socket.on('participant_counter_updated', handleCounter);
     socket.on('round_stats_updated', handleRoundStatsUpdated);
     socket.on('session_error', handleError);
@@ -973,6 +1243,9 @@ export default function PresentationScreenPage() {
       socket.off('bottle_revealed', handleBottleRevealed);
       socket.off('event_status_updated', handleEventStatusUpdated);
       socket.off('event_finished', handleEventFinished);
+      socket.off('summary_stats_shown', handleSummaryStatsShown);
+      socket.off('summary_page_changed', handleSummaryPageChanged);
+      socket.off('all_bottles_revealed', handleAllBottlesRevealed);
       socket.off('participant_counter_updated', handleCounter);
       socket.off('round_stats_updated', handleRoundStatsUpdated);
       socket.off('session_error', handleError);
@@ -1024,6 +1297,25 @@ export default function PresentationScreenPage() {
           ),
         )
       : 0;
+  const handleProjectorSummaryPageChange = (page: number) => {
+    if (!socket || summaryItems.length === 0) {
+      return;
+    }
+
+    const totalPages = Math.max(
+      1,
+      Math.ceil(summaryItems.length / SUMMARY_PAGE_SIZE),
+    );
+    const nextPage = Math.min(
+      totalPages,
+      Math.max(1, page),
+    );
+
+    socket.emit('host:summary_page_change', {
+      eventId,
+      page: nextPage,
+    });
+  };
 
   if (!ready || !token || loading) {
     return <PageLoader message="Готовим экран проектора…" />;
@@ -1118,7 +1410,13 @@ export default function PresentationScreenPage() {
 
           <div className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-7">
             <section className="min-h-0 overflow-hidden">
-              {presentation === 'finished' ? (
+              {presentation === 'summary' ? (
+                <SummaryView
+                  items={summaryItems}
+                  page={summaryPage}
+                  onPageChange={handleProjectorSummaryPageChange}
+                />
+              ) : presentation === 'finished' ? (
                 <FinishedView
                   event={event}
                   connectedCount={counts.connectedCount}

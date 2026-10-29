@@ -27,6 +27,7 @@ import { PageLoader } from '@/components/page-loader';
 import { RadarProfileChart } from '@/components/radar-profile-chart';
 import { Toast } from '@/components/toast';
 import { WineDetailsCard } from '@/components/wine-details-card';
+import { WineImage } from '@/components/wine-image';
 import { useTastingSocket } from '@/hooks/use-tasting-socket';
 import {
   ApiError,
@@ -39,6 +40,7 @@ import {
   SCALE_LABELS,
   WINE_TYPE_LABELS,
   formatCountdown,
+  formatPrice,
   pluralize,
 } from '@/lib/format';
 import {
@@ -78,8 +80,10 @@ import type {
   RatingResponse,
   RevealedWine,
   RoundStats,
+  SummaryRoundItem,
 } from '@/types/api';
 import type {
+  AllBottlesRevealedPayload,
   BottleRevealedPayload,
   EventFinishedPayload,
   EventStatusUpdatedPayload,
@@ -89,6 +93,8 @@ import type {
   RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
+  SummaryPageChangedPayload,
+  SummaryStatsShownPayload,
   VotingClosedPayload,
 } from '@/types/realtime';
 
@@ -202,6 +208,9 @@ export default function GuestJoinPage() {
   const [removedMessage, setRemovedMessage] = useState<string | null>(
     null,
   );
+  const [summaryItems, setSummaryItems] = useState<
+    SummaryRoundItem[]
+  >([]);
   const activeRoundIdRef = useRef<string | null>(null);
   const [ownRating, setOwnRating] =
     useState<RatingResponse | null>(null);
@@ -289,6 +298,19 @@ export default function GuestJoinPage() {
     return apiClient.ratings
       .stats(roundId, { guestToken: token })
       .catch(() => null);
+  };
+
+  const loadGuestSummary = async (
+    targetEventId: string,
+    token: string,
+  ) => {
+    const summary = await apiClient.events
+      .summary(targetEventId, token)
+      .catch(() => null);
+
+    if (summary) {
+      setSummaryItems(summary.items);
+    }
   };
 
   const hydrateEvent = async (
@@ -403,6 +425,13 @@ export default function GuestJoinPage() {
     };
 
     await hydrateEvent(info, token, live.status);
+
+    if (
+      live.status === 'FINISHED' ||
+      live.status === 'EXPORTED'
+    ) {
+      await loadGuestSummary(live.eventId, token);
+    }
   };
 
   const joinSession = async (nicknameValue: string) => {
@@ -630,6 +659,9 @@ export default function GuestJoinPage() {
       setEndsAt(null);
       setWaitingMessage(null);
       setPhase('event_finished');
+      void loadGuestSummary(payload.eventId, guestToken ?? '').catch(
+        () => undefined,
+      );
       setToast({ message: payload.message, tone: 'success' });
     };
 
@@ -655,7 +687,38 @@ export default function GuestJoinPage() {
       setOwnRating(getStoredRating(payload.roundId));
       setEndsAt(null);
       setPausedRemainingSeconds(0);
-      setPhase('revealed');
+      setSummaryItems((current) =>
+        current.map((item) =>
+          item.roundId === payload.roundId
+            ? {
+                ...item,
+                status: 'REVEALED',
+                isWineRevealed:
+                  payload.isWineRevealed || item.isWineRevealed,
+                wine: payload.isWineRevealed
+                  ? payload.wine
+                  : item.wine,
+                stats: {
+                  totalRatings: payload.stats.totalRatings,
+                  validVotesCount: payload.stats.validVotesCount,
+                  outliersRemovedCount:
+                    payload.stats.outliersRemovedCount,
+                  meanScore: payload.stats.meanScore,
+                  medianScore: payload.stats.medianScore,
+                  qualityCategory: payload.stats.qualityCategory,
+                  qualityLabel: payload.stats.qualityLabel,
+                },
+              }
+            : item,
+        ),
+      );
+      setPhase((current) => {
+        if (payload.reason === 'stats') {
+          return 'revealed';
+        }
+
+        return current === 'event_finished' ? current : 'revealed';
+      });
       setToast({
         message: payload.isWineRevealed
           ? 'Карточка образца раскрыта!'
@@ -674,6 +737,38 @@ export default function GuestJoinPage() {
       payload: BottleRevealedPayload,
     ) => {
       applyCompletedRound(payload);
+    };
+
+    const handleSummaryStatsShown = (
+      payload: SummaryStatsShownPayload,
+    ) => {
+      if (payload.eventId !== eventInfo?.eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setPhase('event_finished');
+    };
+
+    const handleSummaryPageChanged = (
+      _payload: SummaryPageChangedPayload,
+    ) => {
+      // Guests always receive the full vertical summary list.
+    };
+
+    const handleAllBottlesRevealed = (
+      payload: AllBottlesRevealedPayload,
+    ) => {
+      if (payload.eventId !== eventInfo?.eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setPhase('event_finished');
+      setToast({
+        message: 'Сомелье раскрыл все вина дегустации',
+        tone: 'success',
+      });
     };
 
     const handleRoundStatsUpdated = (
@@ -717,6 +812,9 @@ export default function GuestJoinPage() {
     socket.on('event_finished', handleEventFinished);
     socket.on('participant_removed', handleParticipantRemoved);
     socket.on('round_stats_updated', handleRoundStatsUpdated);
+    socket.on('summary_stats_shown', handleSummaryStatsShown);
+    socket.on('summary_page_changed', handleSummaryPageChanged);
+    socket.on('all_bottles_revealed', handleAllBottlesRevealed);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
@@ -731,6 +829,9 @@ export default function GuestJoinPage() {
       socket.off('event_finished', handleEventFinished);
       socket.off('participant_removed', handleParticipantRemoved);
       socket.off('round_stats_updated', handleRoundStatsUpdated);
+      socket.off('summary_stats_shown', handleSummaryStatsShown);
+      socket.off('summary_page_changed', handleSummaryPageChanged);
+      socket.off('all_bottles_revealed', handleAllBottlesRevealed);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
@@ -1358,47 +1459,162 @@ export default function GuestJoinPage() {
         ) : null}
 
         {phase === 'event_finished' ? (
-          <section className="mt-5 overflow-hidden rounded-3xl border border-wine-400/25 bg-gradient-to-br from-wine-950/70 via-stone-900/70 to-stone-950 px-6 py-14 text-center">
-            <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border border-wine-400/30 bg-wine-500/15 text-wine-200">
-              <Award className="h-12 w-12" aria-hidden="true" />
-            </div>
-            <p className="mt-7 text-xs uppercase tracking-[0.22em] text-wine-300">
-              {eventInfo?.title ?? 'Дегустация'}
-            </p>
-            <h2
-              data-testid="guest-event-finished"
-              className="mt-3 text-balance text-3xl font-semibold tracking-tight text-white"
-            >
-              Дегустация завершена!
-            </h2>
-            <p className="mx-auto mt-4 max-w-sm text-base leading-7 text-stone-300">
-              Спасибо за участие. Ваши оценки помогут составить
-              Народный винный рейтинг.
-            </p>
-            {ownRating ? (
-              <div className="mx-auto mt-7 max-w-xs rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="text-[11px] uppercase tracking-[0.16em] text-stone-500">
-                  Ваша последняя оценка
-                </p>
-                <p className="mt-1 text-3xl font-semibold text-wine-200">
-                  {ownRating.totalScore.toLocaleString('ru-RU', {
-                    maximumFractionDigits: 1,
-                  })}
-                </p>
-                <p className="mt-1 text-sm text-stone-400">
-                  {ownRating.qualityLabel}
-                </p>
+          <section className="mt-5 overflow-hidden rounded-3xl border border-wine-400/25 bg-gradient-to-br from-wine-950/70 via-stone-900/70 to-stone-950 px-5 py-8 sm:px-6">
+            <div className="text-center">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full border border-wine-400/30 bg-wine-500/15 text-wine-200">
+                <Award className="h-10 w-10" aria-hidden="true" />
               </div>
-            ) : null}
-            <p className="mt-6 text-xs leading-5 text-stone-500">
-              Если сомелье откроет статистику вина, она появится на
-              этом экране автоматически.
-            </p>
+              <p className="mt-5 text-xs uppercase tracking-[0.22em] text-wine-300">
+                {eventInfo?.title ?? 'Дегустация'}
+              </p>
+              <h2
+                data-testid="guest-event-finished"
+                className="mt-2 text-balance text-3xl font-semibold tracking-tight text-white"
+              >
+                Дегустация завершена!
+              </h2>
+              <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-stone-400">
+                Итоги всех образцов обновляются в реальном времени.
+              </p>
+            </div>
+
+            {summaryItems.length === 0 ? (
+              <p className="mx-auto mt-6 max-w-sm rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-stone-500">
+                Сомелье готовит итоговую статистику…
+              </p>
+            ) : (
+              <div className="mt-6 space-y-3 text-left">
+                {summaryItems.map((item) => {
+                  const revealed = item.isWineRevealed
+                    ? item.wine
+                    : null;
+                  const storedRating = getStoredRating(
+                    item.roundId,
+                  );
+
+                  return (
+                    <article
+                      key={item.roundId}
+                      className="rounded-2xl border border-white/10 bg-stone-950/45 p-4"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-wine-500/10 text-wine-300">
+                          {revealed ? (
+                            <WineImage
+                              src={revealed.imageUrl}
+                              alt={revealed.name}
+                              iconClassName="h-7 w-7"
+                            />
+                          ) : (
+                            <WineIcon
+                              className="h-8 w-8"
+                              strokeWidth={1.2}
+                              aria-hidden="true"
+                            />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[10px] uppercase tracking-[0.14em] text-stone-500">
+                            {revealed
+                              ? `${WINE_TYPE_LABELS[revealed.wineType]} · ${revealed.vintage}`
+                              : 'Слепой образец · не раскрыт'}
+                          </p>
+                          <h3 className="mt-1 text-lg font-semibold text-white">
+                            {revealed?.name ?? item.blindLabel}
+                          </h3>
+                          {revealed ? (
+                            <p className="text-xs text-wine-200">
+                              {revealed.winery}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-2xl font-semibold text-wine-200">
+                            {item.stats.meanScore !== null
+                              ? item.stats.meanScore.toLocaleString(
+                                  'ru-RU',
+                                  { maximumFractionDigits: 1 },
+                                )
+                              : '—'}
+                          </p>
+                          <span
+                            className={cn(
+                              'mt-1 inline-flex max-w-32 rounded-full border px-2 py-0.5 text-[10px] font-medium',
+                              qualityTone(
+                                item.stats.qualityCategory,
+                              ),
+                            )}
+                          >
+                            {item.stats.qualityLabel ??
+                              'Без категории'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {revealed ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-stone-400">
+                          <p>
+                            <span className="text-stone-500">
+                              Регион:{' '}
+                            </span>
+                            {revealed.region}
+                          </p>
+                          <p>
+                            <span className="text-stone-500">
+                              Сорта:{' '}
+                            </span>
+                            {revealed.grapeVarieties}
+                          </p>
+                          <p>
+                            <span className="text-stone-500">
+                              Цена:{' '}
+                            </span>
+                            {formatPrice(revealed.retailPrice)}
+                          </p>
+                          <p>
+                            <span className="text-stone-500">
+                              Голосов:{' '}
+                            </span>
+                            {item.stats.validVotesCount}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-xs leading-5 text-stone-500">
+                          Название появится после раскрытия вина.
+                        </p>
+                      )}
+
+                      {storedRating ? (
+                        <p className="mt-3 rounded-xl border border-wine-400/15 bg-wine-500/[0.07] px-3 py-2 text-xs text-wine-100">
+                          Ваша оценка:{' '}
+                          {storedRating.totalScore.toLocaleString(
+                            'ru-RU',
+                            { maximumFractionDigits: 1 },
+                          )}{' '}
+                          · {storedRating.qualityLabel}
+                        </p>
+                      ) : null}
+                    </article>
+                  );
+                })}
+              </div>
+            )}
           </section>
         ) : null}
 
         {phase === 'revealed' ? (
           <div className="mt-5 space-y-5 animate-fade-in">
+            {summaryItems.length > 0 &&
+            (eventStatus === 'FINISHED' ||
+              eventStatus === 'EXPORTED') ? (
+              <button
+                type="button"
+                onClick={() => setPhase('event_finished')}
+                className="inline-flex min-h-11 items-center justify-center rounded-xl border border-white/10 px-4 text-sm text-stone-300 transition hover:bg-white/5 hover:text-white"
+              >
+                ← Все итоги дегустации
+              </button>
+            ) : null}
             <div className="text-center">
               <p className="text-xs uppercase tracking-[0.2em] text-wine-300">
                 {wine ? 'Образец раскрыт' : 'Статистика раунда'}

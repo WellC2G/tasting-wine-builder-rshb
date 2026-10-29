@@ -35,6 +35,8 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
   private readonly timers = new Map<string, ActiveRoundTimer>();
   private readonly pausedRemainingSeconds = new Map<string, number>();
   private readonly lastViewedRoundIds = new Map<string, string>();
+  private readonly displayModes = new Map<string, 'ROUND' | 'SUMMARY'>();
+  private readonly summaryPages = new Map<string, number>();
 
   constructor(
     @InjectRepository(TastingRound)
@@ -205,6 +207,25 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  setDisplayMode(
+    eventId: string,
+    mode: 'ROUND' | 'SUMMARY',
+  ): void {
+    this.displayModes.set(eventId, mode);
+  }
+
+  getDisplayMode(eventId: string): 'ROUND' | 'SUMMARY' | null {
+    return this.displayModes.get(eventId) ?? null;
+  }
+
+  setSummaryPage(eventId: string, page: number): void {
+    this.summaryPages.set(eventId, Math.max(1, page));
+  }
+
+  getSummaryPage(eventId: string): number {
+    return this.summaryPages.get(eventId) ?? 1;
+  }
+
   setLastViewedRound(eventId: string, roundId: string): void {
     this.lastViewedRoundIds.set(eventId, roundId);
   }
@@ -245,6 +266,8 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     this.timers.clear();
     this.pausedRemainingSeconds.clear();
     this.lastViewedRoundIds.clear();
+    this.displayModes.clear();
+    this.summaryPages.clear();
   }
 
   private async expireRound(key: string): Promise<void> {

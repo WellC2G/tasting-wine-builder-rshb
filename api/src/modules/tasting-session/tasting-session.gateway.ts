@@ -42,14 +42,18 @@ import type {
   RemoveParticipantPayload,
   RestartRoundPayload,
   RoundActionPayload,
+  ShowSummaryPayload,
   SocketAuthContext,
   StartRoundPayload,
+  SummaryPageChangePayload,
   TastingSocketData,
   WineDetails,
 } from './interfaces/tasting-session.interfaces';
 import type { Wine } from '../catalog/entities/wine.entity';
 
 type TastingSocket = Socket & { data: TastingSocketData };
+
+const SUMMARY_PAGE_SIZE = 9;
 
 @WebSocketGateway({
   namespace: TASTING_NAMESPACE,
@@ -221,6 +225,112 @@ export class TastingSessionGateway
     });
   }
 
+  @SubscribeMessage('host:show_summary')
+  async handleShowSummary(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isShowSummaryPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, summary } =
+        await this.tastingSessionService.getSummaryForHostFinished(
+          payload.eventId,
+          hostId,
+        );
+      const room = tastingRoom(event.id);
+      const page = this.clampSummaryPage(
+        payload.page ?? 1,
+        summary.items.length,
+      );
+
+      await socket.join(room);
+      this.roomStateService.setDisplayMode(event.id, 'SUMMARY');
+      this.roomStateService.setSummaryPage(event.id, page);
+
+      this.server.to(room).emit('summary_stats_shown', {
+        eventId: event.id,
+        mode: event.mode,
+        page,
+        items: summary.items,
+      });
+    });
+  }
+
+  @SubscribeMessage('host:summary_page_change')
+  async handleSummaryPageChange(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isSummaryPageChangePayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, summary } =
+        await this.tastingSessionService.getSummaryForHostFinished(
+          payload.eventId,
+          hostId,
+        );
+      const page = this.clampSummaryPage(
+        payload.page,
+        summary.items.length,
+      );
+
+      this.roomStateService.setDisplayMode(event.id, 'SUMMARY');
+      this.roomStateService.setSummaryPage(event.id, page);
+      this.server
+        .to(tastingRoom(event.id))
+        .emit('summary_page_changed', {
+          eventId: event.id,
+          page,
+        });
+    });
+  }
+
+  @SubscribeMessage('host:reveal_all_bottles')
+  async handleRevealAllBottles(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isJoinEventPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      const { event, summary } =
+        await this.tastingSessionService.revealAllBottles(
+          payload.eventId,
+          hostId,
+        );
+      const room = tastingRoom(event.id);
+      const page = this.clampSummaryPage(
+        this.roomStateService.getSummaryPage(event.id),
+        summary.items.length,
+      );
+
+      this.roomStateService.setDisplayMode(event.id, 'SUMMARY');
+      this.roomStateService.setSummaryPage(event.id, page);
+      await socket.join(room);
+
+      this.server.to(room).emit('all_bottles_revealed', {
+        eventId: event.id,
+        items: summary.items,
+      });
+      this.server.to(room).emit('summary_stats_shown', {
+        eventId: event.id,
+        mode: event.mode,
+        page,
+        items: summary.items,
+      });
+    });
+  }
+
   @SubscribeMessage('host:remove_participant')
   async handleRemoveParticipant(
     @ConnectedSocket() socket: TastingSocket,
@@ -261,6 +371,7 @@ export class TastingSessionGateway
 
       const room = tastingRoom(event.id);
       await socket.join(room);
+      this.roomStateService.setDisplayMode(event.id, 'ROUND');
 
       this.startTimerForRound(
         event.id,
@@ -574,6 +685,7 @@ export class TastingSessionGateway
           : null,
         stats,
         isWineRevealed,
+        reason: 'completed',
         message: 'Раунд завершён',
       });
 
@@ -621,6 +733,7 @@ export class TastingSessionGateway
         wine: this.toWineDetails(wine),
         stats,
         isWineRevealed: true,
+        reason: 'revealed',
         message: BOTTLE_REVEALED_MESSAGE,
       });
 
@@ -633,6 +746,7 @@ export class TastingSessionGateway
       this.server
         .to(room)
         .emit('participant_counter_updated', counter);
+      await this.broadcastSummaryIfActive(event.id, hostId);
     });
   }
 
@@ -669,6 +783,7 @@ export class TastingSessionGateway
 
       const room = tastingRoom(event.id);
       await socket.join(room);
+      this.roomStateService.setDisplayMode(event.id, 'ROUND');
       this.roomStateService.setLastViewedRound(event.id, round.id);
       const isWineRevealed =
         event.mode === TastingMode.OPEN ||
@@ -683,6 +798,7 @@ export class TastingSessionGateway
           : null,
         stats,
         isWineRevealed,
+        reason: 'stats',
         message: STATS_OPENED_MESSAGE,
       });
 
@@ -853,6 +969,37 @@ export class TastingSessionGateway
         stats: updatedRound.stats,
       });
     }
+
+    await this.broadcastSummaryIfActive(eventId, hostId);
+  }
+
+  private async broadcastSummaryIfActive(
+    eventId: string,
+    hostId: string,
+  ): Promise<void> {
+    if (this.roomStateService.getDisplayMode(eventId) !== 'SUMMARY') {
+      return;
+    }
+
+    const { event, summary } =
+      await this.tastingSessionService.getSummaryForHostFinished(
+        eventId,
+        hostId,
+      );
+    const page = this.clampSummaryPage(
+      this.roomStateService.getSummaryPage(eventId),
+      summary.items.length,
+    );
+
+    this.roomStateService.setSummaryPage(eventId, page);
+    this.server
+      .to(tastingRoom(event.id))
+      .emit('summary_stats_shown', {
+        eventId: event.id,
+        mode: event.mode,
+        page,
+        items: summary.items,
+      });
   }
 
   private startTimerForRound(
@@ -1012,6 +1159,48 @@ export class TastingSessionGateway
       isUUID(candidate.eventId) &&
       typeof candidate.roundId === 'string' &&
       isUUID(candidate.roundId)
+    );
+  }
+
+  private clampSummaryPage(page: number, itemCount: number): number {
+    const totalPages = Math.max(
+      1,
+      Math.ceil(itemCount / SUMMARY_PAGE_SIZE),
+    );
+
+    return Math.min(
+      totalPages,
+      Math.max(1, Math.trunc(page)),
+    );
+  }
+
+  private isShowSummaryPayload(
+    payload: unknown,
+  ): payload is ShowSummaryPayload {
+    if (!this.isJoinEventPayload(payload)) {
+      return false;
+    }
+
+    const candidate = payload as Partial<ShowSummaryPayload>;
+
+    return (
+      candidate.page === undefined ||
+      (Number.isInteger(candidate.page) && candidate.page >= 1)
+    );
+  }
+
+  private isSummaryPageChangePayload(
+    payload: unknown,
+  ): payload is SummaryPageChangePayload {
+    if (!this.isJoinEventPayload(payload)) {
+      return false;
+    }
+
+    const candidate = payload as Partial<SummaryPageChangePayload>;
+
+    return (
+      Number.isInteger(candidate.page) &&
+      (candidate.page ?? 0) >= 1
     );
   }
 

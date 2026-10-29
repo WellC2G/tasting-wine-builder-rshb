@@ -34,6 +34,16 @@ export interface RemoveParticipantPayload {
   participantId: string;
 }
 
+export interface ShowSummaryPayload {
+  eventId: string;
+  page?: number;
+}
+
+export interface SummaryPageChangePayload {
+  eventId: string;
+  page: number;
+}
+
 export interface JoinEventPayload {
   eventId: string;
 }

@@ -32,6 +32,10 @@ import {
   ROUND_NOT_FOUND_MESSAGE,
 } from './tasting-session.constants';
 import {
+  EventSummaryStatsDto,
+  SummaryRoundItemDto,
+} from './dto/event-summary-stats.dto';
+import {
   LiveStateResponseDto,
   LiveStateRoundDto,
 } from './dto/live-state-response.dto';
@@ -704,6 +708,135 @@ export class TastingSessionService {
     return { event, round };
   }
 
+  async getSummaryStats(
+    eventId: string,
+    viewer: SessionViewer,
+  ): Promise<EventSummaryStatsDto> {
+    const event = await this.eventsRepository.findOne({
+      where: { id: eventId },
+      relations: {
+        rounds: {
+          wine: true,
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    if (viewer.role === 'HOST' && event.hostId !== viewer.hostId) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    if (viewer.role === 'GUEST' && viewer.eventId !== event.id) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    return this.buildSummaryStats(event);
+  }
+
+  async getSummaryForHostFinished(
+    eventId: string,
+    hostId: string,
+  ): Promise<{
+    event: TastingEvent;
+    summary: EventSummaryStatsDto;
+  }> {
+    const event = await this.eventsRepository.findOne({
+      where: { id: eventId, hostId },
+      relations: {
+        rounds: {
+          wine: true,
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    if (
+      event.status !== TastingEventStatus.FINISHED &&
+      event.status !== TastingEventStatus.EXPORTED
+    ) {
+      throw new ConflictException(
+        'Общая статистика доступна после завершения дегустации',
+      );
+    }
+
+    return {
+      event,
+      summary: await this.buildSummaryStats(event),
+    };
+  }
+
+  async revealAllBottles(
+    eventId: string,
+    hostId: string,
+  ): Promise<{
+    event: TastingEvent;
+    summary: EventSummaryStatsDto;
+  }> {
+    const event = await this.eventsRepository.findOne({
+      where: { id: eventId, hostId },
+      relations: {
+        rounds: {
+          wine: true,
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    if (event.mode !== TastingMode.BLIND) {
+      return {
+        event,
+        summary: await this.buildSummaryStats(event),
+      };
+    }
+
+    const allRoundsFinalized =
+      event.rounds.length > 0 &&
+      event.rounds.every(
+        (round) =>
+          round.status === TastingRoundStatus.REVEALED ||
+          round.status === TastingRoundStatus.SKIPPED,
+      );
+    const eventFinalized =
+      event.status === TastingEventStatus.FINISHED ||
+      event.status === TastingEventStatus.EXPORTED;
+
+    if (!eventFinalized && !allRoundsFinalized) {
+      throw new ConflictException(
+        'Раскрыть все вина можно после завершения всех раундов',
+      );
+    }
+
+    const roundsToReveal = event.rounds.filter(
+      (round) =>
+        round.status !== TastingRoundStatus.SKIPPED &&
+        round.revealedAt === null,
+    );
+
+    if (roundsToReveal.length > 0) {
+      const revealedAt = new Date();
+
+      for (const round of roundsToReveal) {
+        round.revealedAt = revealedAt;
+      }
+
+      await this.roundsRepository.save(roundsToReveal);
+    }
+
+    return {
+      event,
+      summary: await this.buildSummaryStats(event),
+    };
+  }
+
   async removeParticipant(
     eventId: string,
     participantId: string,
@@ -939,6 +1072,54 @@ export class TastingSessionService {
     }
 
     return sortedRounds[0] ?? null;
+  }
+
+  private async buildSummaryStats(
+    event: TastingEvent,
+  ): Promise<EventSummaryStatsDto> {
+    const rounds = [...event.rounds]
+      .filter(
+        (round) => round.status !== TastingRoundStatus.SKIPPED,
+      )
+      .sort((left, right) => left.orderNumber - right.orderNumber);
+
+    const items: SummaryRoundItemDto[] = await Promise.all(
+      rounds.map(async (round) => {
+        const stats =
+          await this.outlierFilterService.filterAndAggregate(
+            round.id,
+          );
+        const isWineRevealed =
+          event.mode === TastingMode.OPEN ||
+          round.revealedAt !== null;
+
+        return {
+          roundId: round.id,
+          orderNumber: round.orderNumber,
+          blindLabel: round.blindLabel,
+          status: round.status,
+          isWineRevealed,
+          wine: isWineRevealed
+            ? WineResponseDto.fromEntity(round.wine)
+            : null,
+          stats: {
+            totalRatings: stats.totalRatings,
+            validVotesCount: stats.validVotesCount,
+            outliersRemovedCount: stats.outliersRemovedCount,
+            meanScore: stats.meanScore,
+            medianScore: stats.medianScore,
+            qualityCategory: stats.qualityCategory,
+            qualityLabel: stats.qualityLabel,
+          },
+        };
+      }),
+    );
+
+    return {
+      eventId: event.id,
+      mode: event.mode,
+      items,
+    };
   }
 
   private buildLiveRound(

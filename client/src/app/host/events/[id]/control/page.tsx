@@ -7,6 +7,8 @@ import {
   ArrowLeft,
   Award,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Eye,
   Flag,
@@ -63,11 +65,15 @@ import type {
   EventDetail,
   EventParticipant,
   EventRound,
+  EventSummaryStats,
   ExportResponse,
   RoundStats,
   RoundStatus,
+  SummaryRoundItem,
+  SummaryRoundStats,
 } from '@/types/api';
 import type {
+  AllBottlesRevealedPayload,
   BottleRevealedPayload,
   EventFinishedPayload,
   EventStatusUpdatedPayload,
@@ -79,6 +85,8 @@ import type {
   RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
+  SummaryPageChangedPayload,
+  SummaryStatsShownPayload,
   VotingClosedPayload,
 } from '@/types/realtime';
 
@@ -86,6 +94,20 @@ type ToastState = {
   message: string;
   tone: 'info' | 'success' | 'error';
 } | null;
+
+const SUMMARY_PAGE_SIZE = 9;
+
+function toSummaryStats(stats: RoundStats): SummaryRoundStats {
+  return {
+    totalRatings: stats.totalRatings,
+    validVotesCount: stats.validVotesCount,
+    outliersRemovedCount: stats.outliersRemovedCount,
+    meanScore: stats.meanScore,
+    medianScore: stats.medianScore,
+    qualityCategory: stats.qualityCategory,
+    qualityLabel: stats.qualityLabel,
+  };
+}
 
 function computeEndsAt(round: EventRound | null): number | null {
   if (!round || round.status !== 'ACTIVE' || !round.startedAt) {
@@ -139,6 +161,8 @@ export default function HostControlPage() {
     | 'skip'
     | 'finish_round'
     | 'reveal_wine'
+    | 'summary'
+    | 'reveal_all'
     | 'stats'
     | null
   >(null);
@@ -160,8 +184,9 @@ export default function HostControlPage() {
   const [exportResult, setExportResult] =
     useState<ExportResponse | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [lastReveal, setLastReveal] =
-    useState<BottleRevealedPayload | null>(null);
+  const [lastReveal, setLastReveal] = useState<
+    BottleRevealedPayload | RoundCompletedPayload | null
+  >(null);
   const [participants, setParticipants] = useState<EventParticipant[]>(
     [],
   );
@@ -169,6 +194,12 @@ export default function HostControlPage() {
   const [removeTarget, setRemoveTarget] =
     useState<EventParticipant | null>(null);
   const [removingParticipant, setRemovingParticipant] =
+    useState(false);
+  const [summaryItems, setSummaryItems] = useState<
+    SummaryRoundItem[]
+  >([]);
+  const [summaryPage, setSummaryPage] = useState(1);
+  const [revealAllConfirmOpen, setRevealAllConfirmOpen] =
     useState(false);
   const [toast, setToast] = useState<ToastState>(null);
 
@@ -242,8 +273,22 @@ export default function HostControlPage() {
             (round) => round.id === initialRoundId,
           ) ?? null;
 
+        const summary =
+          detail.status === 'FINISHED' ||
+          detail.status === 'EXPORTED'
+            ? await apiClient.events
+                .summary(eventId)
+                .catch(() => null)
+            : null;
+
+        if (cancelled) {
+          return;
+        }
+
         setEvent(mergedEvent);
         setParticipants(eventParticipants);
+        setSummaryItems(summary?.items ?? []);
+        setSummaryPage(1);
         setSelectedRoundId(initialRoundId);
         setCounts({
           eventId,
@@ -472,6 +517,13 @@ export default function HostControlPage() {
       );
       setEndsAt(null);
       setPendingAction(null);
+      void apiClient.events
+        .summary(eventId)
+        .then((summary) => {
+          setSummaryItems(summary.items);
+          setSummaryPage(1);
+        })
+        .catch(() => undefined);
       setToast({ message: payload.message, tone: 'success' });
     };
 
@@ -513,6 +565,22 @@ export default function HostControlPage() {
         roundId: payload.roundId,
         votedCount: payload.stats.totalRatings,
       }));
+      setSummaryItems((current) =>
+        current.map((item) =>
+          item.roundId === payload.roundId
+            ? {
+                ...item,
+                status: 'REVEALED',
+                isWineRevealed:
+                  payload.isWineRevealed || item.isWineRevealed,
+                wine: payload.isWineRevealed
+                  ? payload.wine
+                  : item.wine,
+                stats: toSummaryStats(payload.stats),
+              }
+            : item,
+        ),
+      );
 
       const score =
         payload.stats.meanScore !== null
@@ -593,6 +661,68 @@ export default function HostControlPage() {
           ? { ...current, stats: payload.stats }
           : current,
       );
+      setSummaryItems((current) =>
+        current.map((item) =>
+          item.roundId === payload.roundId
+            ? { ...item, stats: toSummaryStats(payload.stats) }
+            : item,
+        ),
+      );
+    };
+
+    const handleSummaryStatsShown = (
+      payload: SummaryStatsShownPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setSummaryPage(payload.page);
+      setPendingAction(null);
+    };
+
+    const handleSummaryPageChanged = (
+      payload: SummaryPageChangedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryPage(payload.page);
+    };
+
+    const handleAllBottlesRevealed = (
+      payload: AllBottlesRevealedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setSummaryItems(payload.items);
+      setEvent((current) =>
+        current
+          ? {
+              ...current,
+              rounds: current.rounds.map((round) => ({
+                ...round,
+                revealedAt:
+                  round.status === 'SKIPPED'
+                    ? round.revealedAt
+                    : (round.revealedAt ?? new Date().toISOString()),
+                isWineRevealed:
+                  round.status === 'SKIPPED'
+                    ? round.isWineRevealed
+                    : true,
+              })),
+            }
+          : current,
+      );
+      setPendingAction(null);
+      setToast({
+        message: 'Все вина раскрыты и показаны гостям',
+        tone: 'success',
+      });
     };
 
     const handleError = (payload: SocketMessagePayload) => {
@@ -614,6 +744,9 @@ export default function HostControlPage() {
       handleParticipantsUpdated,
     );
     socket.on('round_stats_updated', handleRoundStatsUpdated);
+    socket.on('summary_stats_shown', handleSummaryStatsShown);
+    socket.on('summary_page_changed', handleSummaryPageChanged);
+    socket.on('all_bottles_revealed', handleAllBottlesRevealed);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
@@ -632,6 +765,9 @@ export default function HostControlPage() {
         handleParticipantsUpdated,
       );
       socket.off('round_stats_updated', handleRoundStatsUpdated);
+      socket.off('summary_stats_shown', handleSummaryStatsShown);
+      socket.off('summary_page_changed', handleSummaryPageChanged);
+      socket.off('all_bottles_revealed', handleAllBottlesRevealed);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
@@ -874,6 +1010,17 @@ export default function HostControlPage() {
     selectedRound !== null &&
     selectedRound.status !== 'SKIPPED' &&
     (roundInProgress === null || roundInProgress.id === selectedRound.id);
+  const totalSummaryPages = Math.max(
+    1,
+    Math.ceil(summaryItems.length / SUMMARY_PAGE_SIZE),
+  );
+  const allWinesRevealed =
+    event?.mode === 'OPEN' ||
+    (summaryItems.length > 0
+      ? summaryItems.every((item) => item.isWineRevealed)
+      : rounds
+          .filter((round) => round.status !== 'SKIPPED')
+          .every((round) => round.isWineRevealed));
 
   const handleSelectRound = (round: EventRound) => {
     if (
@@ -1042,6 +1189,63 @@ export default function HostControlPage() {
     socket.emit('host:show_stats', {
       eventId,
       roundId: selectedRound.id,
+    });
+  };
+
+  const handleShowSummary = () => {
+    if (!socket || !eventIsFinished) {
+      return;
+    }
+
+    setPendingAction('summary');
+    setSummaryPage(1);
+    socket.emit('host:show_summary', {
+      eventId,
+      page: 1,
+    });
+  };
+
+  const handleSummaryPageChange = (nextPage: number) => {
+    if (!socket || !eventIsFinished) {
+      return;
+    }
+
+    const page = Math.min(
+      totalSummaryPages,
+      Math.max(1, nextPage),
+    );
+
+    setSummaryPage(page);
+    socket.emit('host:summary_page_change', {
+      eventId,
+      page,
+    });
+  };
+
+  const handleRevealAllBottles = () => {
+    if (!socket || event?.mode !== 'BLIND' || allWinesRevealed) {
+      return;
+    }
+
+    setPendingAction('reveal_all');
+    setRevealAllConfirmOpen(false);
+    socket.emit('host:reveal_all_bottles', { eventId });
+  };
+
+  const handleRevealRoundWine = (round: EventRound) => {
+    if (
+      !socket ||
+      event?.mode !== 'BLIND' ||
+      round.status !== 'REVEALED' ||
+      round.revealedAt !== null
+    ) {
+      return;
+    }
+
+    setPendingAction('reveal_wine');
+    socket.emit('host:reveal_bottle', {
+      eventId,
+      roundId: round.id,
     });
   };
 
@@ -1314,11 +1518,99 @@ export default function HostControlPage() {
 
         {eventIsFinished ? (
           <section className="mt-5 rounded-3xl border border-sky-400/20 bg-sky-400/[0.06] p-4 sm:p-6">
-            <p className="inline-flex items-center gap-2 text-sm font-medium text-sky-100">
-              <Award className="h-4 w-4" aria-hidden="true" />
-              Дегустация завершена. Доступен просмотр статистики и
-              выгрузка результатов.
-            </p>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.18em] text-sky-200">
+                  <Award className="h-4 w-4" aria-hidden="true" />
+                  Итоги дегустации
+                </p>
+                <h2 className="mt-1 text-lg font-semibold text-white">
+                  Дегустация завершена
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-stone-400">
+                  Покажите общую статистику всех вин или откройте
+                  детальную карточку выбранного образца.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  data-testid="control-show-summary"
+                  onClick={handleShowSummary}
+                  disabled={pendingAction !== null}
+                  className="inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-white px-4 text-sm font-semibold text-stone-950 transition hover:bg-stone-200 disabled:opacity-50"
+                >
+                  {pendingAction === 'summary' ? (
+                    <Loader2
+                      className="h-4 w-4 animate-spin"
+                      aria-hidden="true"
+                    />
+                  ) : (
+                    <Users className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  Показать общую статистику
+                </button>
+                {event.mode === 'BLIND' ? (
+                  <button
+                    type="button"
+                    data-testid="control-reveal-all"
+                    onClick={() => setRevealAllConfirmOpen(true)}
+                    disabled={
+                      allWinesRevealed || pendingAction !== null
+                    }
+                    className="inline-flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-wine-400/30 bg-wine-500/10 px-4 text-sm font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {pendingAction === 'reveal_all' ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Eye className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    {allWinesRevealed
+                      ? 'Все вина раскрыты'
+                      : 'Раскрыть все вина'}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {summaryItems.length > 9 ? (
+              <div className="mt-4 flex items-center justify-center gap-3 rounded-2xl border border-white/10 bg-stone-950/30 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSummaryPageChange(summaryPage - 1)
+                  }
+                  disabled={summaryPage <= 1}
+                  aria-label="Предыдущая страница итогов"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
+                >
+                  <ChevronLeft
+                    className="h-5 w-5"
+                    aria-hidden="true"
+                  />
+                </button>
+                <span className="text-sm text-stone-300">
+                  Страница {summaryPage} из {totalSummaryPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSummaryPageChange(summaryPage + 1)
+                  }
+                  disabled={summaryPage >= totalSummaryPages}
+                  aria-label="Следующая страница итогов"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
+                >
+                  <ChevronRight
+                    className="h-5 w-5"
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+            ) : null}
           </section>
         ) : null}
 
@@ -1340,47 +1632,73 @@ export default function HostControlPage() {
 
           <div className="mt-4 space-y-2">
             {rounds.map((round) => (
-              <button
+              <div
                 key={round.id}
-                type="button"
-                onClick={() => handleSelectRound(round)}
-                disabled={
-                  roundSelectionLocked &&
-                  round.id !== selectedRoundId
-                }
                 className={cn(
-                  'flex min-h-14 w-full items-center gap-3 rounded-2xl border px-3 py-2.5 text-left transition',
+                  'flex min-h-14 w-full items-center gap-1 rounded-2xl border px-1 py-1 transition',
                   round.id === selectedRoundId
                     ? 'border-wine-400/50 bg-wine-500/10'
-                    : 'border-white/10 bg-stone-950/40 hover:bg-white/[0.04]',
-                  roundSelectionLocked &&
-                    round.id !== selectedRoundId &&
-                    'cursor-not-allowed opacity-40 hover:bg-stone-950/40',
+                    : 'border-white/10 bg-stone-950/40',
                 )}
               >
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 font-mono text-xs text-stone-300">
-                  {String(round.orderNumber).padStart(2, '0')}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-white">
-                    {round.blindLabel}
-                  </span>
-                  {round.blindLabel.trim().toLowerCase() !==
-                  round.wine.name.trim().toLowerCase() ? (
-                    <span className="mt-0.5 block truncate text-xs text-stone-500">
-                      {round.wine.name}
-                    </span>
-                  ) : null}
-                </span>
-                <span
+                <button
+                  type="button"
+                  onClick={() => handleSelectRound(round)}
+                  disabled={
+                    roundSelectionLocked &&
+                    round.id !== selectedRoundId
+                  }
                   className={cn(
-                    'shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium',
-                    roundStatusTone(round.status),
+                    'flex min-h-12 min-w-0 flex-1 items-center gap-3 rounded-xl px-2 py-1.5 text-left transition',
+                    roundSelectionLocked &&
+                      round.id !== selectedRoundId
+                      ? 'cursor-not-allowed opacity-40'
+                      : 'hover:bg-white/[0.04]',
                   )}
                 >
-                  {ROUND_STATUS_LABELS[round.status]}
-                </span>
-              </button>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/5 font-mono text-xs text-stone-300">
+                    {String(round.orderNumber).padStart(2, '0')}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-white">
+                      {round.blindLabel}
+                    </span>
+                    {round.blindLabel.trim().toLowerCase() !==
+                    round.wine.name.trim().toLowerCase() ? (
+                      <span className="mt-0.5 block truncate text-xs text-stone-500">
+                        {round.wine.name}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span
+                    className={cn(
+                      'shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-medium',
+                      roundStatusTone(round.status),
+                    )}
+                  >
+                    {ROUND_STATUS_LABELS[round.status]}
+                  </span>
+                </button>
+
+                {event?.mode === 'BLIND' &&
+                round.status === 'REVEALED' ? (
+                  <button
+                    type="button"
+                    data-testid={`control-reveal-round-${round.id}`}
+                    onClick={() => handleRevealRoundWine(round)}
+                    disabled={
+                      round.revealedAt !== null ||
+                      pendingAction !== null
+                    }
+                    className="inline-flex min-h-10 shrink-0 items-center justify-center gap-1 rounded-xl border border-sky-400/25 px-2 text-[11px] font-medium text-sky-100 transition hover:bg-sky-400/10 disabled:cursor-not-allowed disabled:opacity-45"
+                  >
+                    <Eye className="h-3.5 w-3.5" aria-hidden="true" />
+                    {round.revealedAt !== null
+                      ? 'Раскрыто'
+                      : 'Раскрыть'}
+                  </button>
+                ) : null}
+              </div>
             ))}
             {rounds.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-white/10 px-4 py-6 text-center text-sm text-stone-500">
@@ -1439,7 +1757,7 @@ export default function HostControlPage() {
                   ) : (
                     <Radio className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Показать статистику
+                  Показать статистику образца
                 </button>
                 {event.mode === 'BLIND' ? (
                   <button
@@ -2102,6 +2420,38 @@ export default function HostControlPage() {
         result={exportResult}
         eventId={eventId}
       />
+
+      <Modal
+        open={revealAllConfirmOpen}
+        onClose={() => setRevealAllConfirmOpen(false)}
+        title="Раскрыть все вина?"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Вы уверены, что хотите раскрыть все вина дегустации? Названия
+          и карточки всех образцов сразу появятся на экране
+          демонстрации и у участников.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setRevealAllConfirmOpen(false)}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-reveal-all-confirm"
+            onClick={handleRevealAllBottles}
+            disabled={pendingAction !== null}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:opacity-50"
+          >
+            <Eye className="h-4 w-4" aria-hidden="true" />
+            Раскрыть все вина
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={startEventConfirmOpen}

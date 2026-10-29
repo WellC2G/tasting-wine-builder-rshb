@@ -7,6 +7,7 @@ import type {
   EventParticipant,
   EventRound,
   EventSummary,
+  EventSummaryStats,
   ExportLog,
   ExportResponse,
   GuestJoinInput,
@@ -386,6 +387,16 @@ export const apiClient = {
       return request<void>(`/api/v1/events/${eventId}`, {
         method: 'DELETE',
       });
+    },
+
+    summary(
+      eventId: string,
+      guestToken?: string,
+    ): Promise<EventSummaryStats> {
+      return request<EventSummaryStats>(
+        `/api/v1/events/${eventId}/summary`,
+        { guestToken },
+      );
     },
 
     participants(eventId: string): Promise<EventParticipant[]> {

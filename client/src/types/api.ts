@@ -160,6 +160,32 @@ export interface LiveState {
   currentRound: LiveStateRound | null;
 }
 
+export interface SummaryRoundStats {
+  totalRatings: number;
+  validVotesCount: number;
+  outliersRemovedCount: number;
+  meanScore: number | null;
+  medianScore: number | null;
+  qualityCategory: ParkerQualityCategory | null;
+  qualityLabel: string | null;
+}
+
+export interface SummaryRoundItem {
+  roundId: string;
+  orderNumber: number;
+  blindLabel: string;
+  status: RoundStatus;
+  isWineRevealed: boolean;
+  wine: RevealedWine | null;
+  stats: SummaryRoundStats;
+}
+
+export interface EventSummaryStats {
+  eventId: string;
+  mode: TastingMode;
+  items: SummaryRoundItem[];
+}
+
 export interface GuestCurrentRound {
   roundId: string;
   orderNumber: number;

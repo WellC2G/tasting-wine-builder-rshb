@@ -24,6 +24,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface';
 import { LiveStateAccessGuard } from './guards/live-state-access.guard';
 import type { LiveStateRequest } from './interfaces/tasting-session.interfaces';
+import { EventSummaryStatsDto } from './dto/event-summary-stats.dto';
 import { LiveStateResponseDto } from './dto/live-state-response.dto';
 import { TastingSessionService } from './tasting-session.service';
 import { AUTH_REQUIRED_MESSAGE } from './tasting-session.constants';
@@ -86,6 +87,46 @@ export class TastingSessionController {
     }
 
     return this.tastingSessionService.getLiveState(id, viewer);
+  }
+
+  @Get(':id/summary')
+  @UseGuards(LiveStateAccessGuard)
+  @ApiBearerAuth('host-jwt')
+  @ApiHeader({
+    name: 'X-Guest-Token',
+    required: false,
+    description:
+      'Токен гостевой сессии. Альтернатива Bearer JWT организатора.',
+  })
+  @ApiOperation({
+    summary: 'Итоговая статистика всех образцов',
+    description:
+      'Возвращает не пропущенные раунды с итоговыми оценками и данными ' +
+      'вина только для раскрытых образцов.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Итоговая статистика',
+    type: EventSummaryStatsDto,
+  })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  getSummary(
+    @Param('id', eventIdPipe) id: string,
+    @Req() request: LiveStateRequest,
+  ): Promise<EventSummaryStatsDto> {
+    const viewer = request.sessionViewer;
+
+    if (!viewer) {
+      throw new UnauthorizedException(AUTH_REQUIRED_MESSAGE);
+    }
+
+    return this.tastingSessionService.getSummaryStats(id, viewer);
   }
 
   @Post(':id/finish')

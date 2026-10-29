@@ -179,9 +179,7 @@ function LiveView({
                 Осталось времени
               </p>
               <p className="mt-3 font-mono text-[92px] font-semibold leading-none tracking-tighter text-white">
-                {round.status === 'ACTIVE'
-                  ? formatCountdown(remainingSeconds)
-                  : formatCountdown(Math.max(1, round.durationSeconds))}
+                {formatCountdown(remainingSeconds)}
               </p>
               <p className="mt-4 text-base text-stone-400">
                 {round.status === 'ACTIVE'
@@ -261,9 +259,7 @@ function LiveView({
             Осталось времени
           </p>
           <p className="mt-2 font-mono text-[76px] font-semibold leading-none tracking-tighter text-white">
-            {round.status === 'ACTIVE'
-              ? formatCountdown(remainingSeconds)
-              : formatCountdown(Math.max(1, round.durationSeconds))}
+            {formatCountdown(remainingSeconds)}
           </p>
         </div>
 
@@ -531,6 +527,8 @@ export default function PresentationScreenPage() {
     votedCount: 0,
   });
   const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [pausedRemainingSeconds, setPausedRemainingSeconds] =
+    useState(0);
   const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -565,6 +563,7 @@ export default function PresentationScreenPage() {
       setWine(null);
       setStats(null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPresentation(
         live.status === 'FINISHED' || live.status === 'EXPORTED'
           ? 'finished'
@@ -574,6 +573,7 @@ export default function PresentationScreenPage() {
     }
 
     setRound(live.currentRound);
+    setPausedRemainingSeconds(live.currentRound.remainingSeconds);
     setEndsAt(
       live.currentRound.status === 'ACTIVE' &&
         live.currentRound.endsAt
@@ -686,11 +686,12 @@ export default function PresentationScreenPage() {
         durationSeconds: payload.durationSeconds,
         startedAt: new Date().toISOString(),
         endsAt: payload.endsAt,
-        remainingSeconds: payload.durationSeconds,
+        remainingSeconds: payload.remainingSeconds,
       });
       setWine(payload.wine ?? null);
       setStats(null);
       setEndsAt(new Date(payload.endsAt).getTime());
+      setPausedRemainingSeconds(payload.remainingSeconds);
       setCounts((current) => ({
         ...current,
         eventId,
@@ -704,12 +705,16 @@ export default function PresentationScreenPage() {
           ? {
               ...current,
               status: 'VOTING_CLOSED',
-              durationSeconds:
-                payload.durationSeconds ?? current.durationSeconds,
+              durationSeconds: Math.max(
+                1,
+                payload.remainingSeconds,
+              ),
+              remainingSeconds: payload.remainingSeconds,
             }
           : current,
       );
       setEndsAt(null);
+      setPausedRemainingSeconds(payload.remainingSeconds);
       setPresentation('live');
     };
 
@@ -729,7 +734,12 @@ export default function PresentationScreenPage() {
             }
           : current,
       );
-      setEndsAt(new Date(payload.endsAt).getTime());
+      setPausedRemainingSeconds(payload.remainingSeconds);
+      setEndsAt(
+        payload.status === 'ACTIVE' && payload.endsAt
+          ? new Date(payload.endsAt).getTime()
+          : null,
+      );
     };
 
     const handleRoundSkipped = (payload: RoundSkippedPayload) => {
@@ -897,7 +907,7 @@ export default function PresentationScreenPage() {
   const remainingSeconds =
     round?.status === 'ACTIVE' && endsAt
       ? Math.max(0, Math.ceil((endsAt - now) / 1000))
-      : (round?.durationSeconds ?? 0);
+      : pausedRemainingSeconds;
   const voteProgress =
     counts.connectedCount > 0
       ? Math.min(

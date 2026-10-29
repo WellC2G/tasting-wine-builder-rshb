@@ -189,6 +189,8 @@ export default function GuestJoinPage() {
   const [wine, setWine] = useState<RevealedWine | null>(null);
   const [stats, setStats] = useState<RoundStats | null>(null);
   const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [pausedRemainingSeconds, setPausedRemainingSeconds] =
+    useState(0);
   const [now, setNow] = useState(Date.now());
   const [waitingMessage, setWaitingMessage] = useState<string | null>(
     null,
@@ -304,6 +306,7 @@ export default function GuestJoinPage() {
       setOwnRating(round ? getStoredRating(round.roundId) : null);
       setStats(null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPhase('event_finished');
       return;
     }
@@ -312,11 +315,13 @@ export default function GuestJoinPage() {
       setCurrentRound(null);
       setOwnRating(null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPhase('waiting');
       return;
     }
 
     setCurrentRound(round);
+    setPausedRemainingSeconds(round.remainingSeconds);
     const savedRating = getStoredRating(round.roundId);
     setOwnRating(savedRating);
 
@@ -325,6 +330,7 @@ export default function GuestJoinPage() {
       setStats(roundStats);
       setWine(round.wine ?? null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPhase('revealed');
       return;
     }
@@ -355,12 +361,14 @@ export default function GuestJoinPage() {
     if (round.status === 'SKIPPED') {
       setWine(null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setWaitingMessage('Образец пропущен. Ожидание следующего раунда…');
       setPhase('waiting');
       return;
     }
 
     setEndsAt(null);
+    setPausedRemainingSeconds(0);
     setPhase('waiting');
   };
 
@@ -475,7 +483,7 @@ export default function GuestJoinPage() {
         blindLabel: payload.blindLabel,
         status: 'ACTIVE',
         durationSeconds: payload.durationSeconds,
-        remainingSeconds: payload.durationSeconds,
+        remainingSeconds: payload.remainingSeconds,
         wine: payload.wine,
       };
 
@@ -501,6 +509,7 @@ export default function GuestJoinPage() {
           : restoreFormForRound(payload.roundId),
       );
       setEndsAt(new Date(payload.endsAt).getTime());
+      setPausedRemainingSeconds(payload.remainingSeconds);
       setPhase(savedRating ? 'submitted' : 'voting');
       setToast({
         message: payload.resetRatings
@@ -518,12 +527,16 @@ export default function GuestJoinPage() {
           ? {
               ...round,
               status: 'VOTING_CLOSED',
-              durationSeconds:
-                payload.durationSeconds ?? round.durationSeconds,
+              durationSeconds: Math.max(
+                1,
+                payload.remainingSeconds,
+              ),
+              remainingSeconds: payload.remainingSeconds,
             }
           : round,
       );
       setEndsAt(null);
+      setPausedRemainingSeconds(payload.remainingSeconds);
       setPhase((current) =>
         current === 'voting' || current === 'submitted'
           ? 'closed'
@@ -548,7 +561,12 @@ export default function GuestJoinPage() {
             }
           : round,
       );
-      setEndsAt(new Date(payload.endsAt).getTime());
+      setPausedRemainingSeconds(payload.remainingSeconds);
+      setEndsAt(
+        payload.status === 'ACTIVE' && payload.endsAt
+          ? new Date(payload.endsAt).getTime()
+          : null,
+      );
       setToast({
         message: 'Сомелье добавил время раунда',
         tone: 'info',
@@ -625,6 +643,8 @@ export default function GuestJoinPage() {
       setWine(payload.wine);
       setStats(payload.stats);
       setOwnRating(getStoredRating(payload.roundId));
+      setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPhase('revealed');
       setToast({
         message: 'Карточка образца раскрыта!',
@@ -776,7 +796,7 @@ export default function GuestJoinPage() {
   const remainingSeconds =
     currentRound?.status === 'ACTIVE' && endsAt
       ? Math.max(0, Math.ceil((endsAt - now) / 1000))
-      : (currentRound?.remainingSeconds ?? 0);
+      : pausedRemainingSeconds;
 
   if (phase === 'loading') {
     return <PageLoader message="Ищем вашу дегустацию…" />;

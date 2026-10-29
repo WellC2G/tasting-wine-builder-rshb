@@ -10,6 +10,7 @@ export interface RoundStartedPayload {
   blindLabel: string;
   scaleType: ScaleType;
   durationSeconds: number;
+  remainingSeconds: number;
   endsAt: string;
   wine?: RevealedWine;
   isResumed?: boolean;
@@ -19,13 +20,15 @@ export interface RoundStartedPayload {
 export interface VotingClosedPayload {
   roundId: string;
   message: string;
-  durationSeconds?: number;
+  remainingSeconds: number;
+  endsAt: null;
 }
 
 export interface RoundTimerUpdatedPayload {
   roundId: string;
+  status: 'ACTIVE' | 'VOTING_CLOSED';
   durationSeconds: number;
-  endsAt: string;
+  endsAt: string | null;
   remainingSeconds: number;
 }
 

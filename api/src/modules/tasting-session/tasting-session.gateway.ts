@@ -27,6 +27,7 @@ import {
   SESSION_CONNECTION_ERROR_MESSAGE,
   STATS_OPENED_MESSAGE,
   TASTING_NAMESPACE,
+  TIMER_EXPIRED_MESSAGE,
   VOTING_CLOSED_BY_HOST_MESSAGE,
   tastingRoom,
 } from './tasting-session.constants';
@@ -236,12 +237,12 @@ export class TastingSessionGateway
       const room = tastingRoom(event.id);
       await socket.join(room);
 
-      this.roomStateService.startRoundTimer({
-        eventId: event.id,
-        roundId: round.id,
-        durationSeconds: round.durationSeconds,
+      this.startTimerForRound(
+        event.id,
+        round.id,
+        round.durationSeconds,
         endsAt,
-      });
+      );
 
       const basePayload = {
         roundId: round.id,
@@ -249,6 +250,7 @@ export class TastingSessionGateway
         blindLabel: round.blindLabel,
         scaleType: event.scaleType,
         durationSeconds: round.durationSeconds,
+        remainingSeconds: round.durationSeconds,
         endsAt: endsAt.toISOString(),
       };
 
@@ -284,7 +286,7 @@ export class TastingSessionGateway
         return;
       }
 
-      const { event, round } =
+      const { event, round, remainingSeconds } =
         await this.tastingSessionService.lockVoting(
           payload.eventId,
           payload.roundId,
@@ -292,12 +294,12 @@ export class TastingSessionGateway
         );
 
       const room = tastingRoom(event.id);
-      this.roomStateService.clearRoundTimer(event.id, round.id);
       await socket.join(room);
 
       this.server.to(room).emit('voting_closed', {
         roundId: round.id,
-        durationSeconds: round.durationSeconds,
+        remainingSeconds,
+        endsAt: null,
         message: VOTING_CLOSED_BY_HOST_MESSAGE,
       });
 
@@ -333,12 +335,12 @@ export class TastingSessionGateway
 
       const room = tastingRoom(event.id);
       await socket.join(room);
-      this.roomStateService.startRoundTimer({
-        eventId: event.id,
-        roundId: round.id,
-        durationSeconds: round.durationSeconds,
+      this.startTimerForRound(
+        event.id,
+        round.id,
+        round.durationSeconds,
         endsAt,
-      });
+      );
 
       const basePayload = {
         roundId: round.id,
@@ -346,6 +348,7 @@ export class TastingSessionGateway
         blindLabel: round.blindLabel,
         scaleType: event.scaleType,
         durationSeconds: round.durationSeconds,
+        remainingSeconds: round.durationSeconds,
         endsAt: endsAt.toISOString(),
         isResumed: true,
       };
@@ -393,19 +396,20 @@ export class TastingSessionGateway
       const room = tastingRoom(event.id);
       await socket.join(room);
 
-      if (round.status === TastingRoundStatus.ACTIVE) {
-        this.roomStateService.startRoundTimer({
-          eventId: event.id,
-          roundId: round.id,
-          durationSeconds: round.durationSeconds,
+      if (round.status === TastingRoundStatus.ACTIVE && endsAt) {
+        this.startTimerForRound(
+          event.id,
+          round.id,
+          round.durationSeconds,
           endsAt,
-        });
+        );
       }
 
       this.server.to(room).emit('round_timer_updated', {
         roundId: round.id,
+        status: round.status,
         durationSeconds: round.durationSeconds,
-        endsAt: endsAt.toISOString(),
+        endsAt: endsAt ? endsAt.toISOString() : null,
         remainingSeconds,
       });
     });
@@ -432,12 +436,12 @@ export class TastingSessionGateway
 
       const room = tastingRoom(event.id);
       await socket.join(room);
-      this.roomStateService.startRoundTimer({
-        eventId: event.id,
-        roundId: round.id,
-        durationSeconds: round.durationSeconds,
+      this.startTimerForRound(
+        event.id,
+        round.id,
+        round.durationSeconds,
         endsAt,
-      });
+      );
 
       const basePayload = {
         roundId: round.id,
@@ -445,6 +449,7 @@ export class TastingSessionGateway
         blindLabel: round.blindLabel,
         scaleType: event.scaleType,
         durationSeconds: round.durationSeconds,
+        remainingSeconds: round.durationSeconds,
         endsAt: endsAt.toISOString(),
         resetRatings: true,
       };
@@ -708,6 +713,52 @@ export class TastingSessionGateway
         error instanceof Error ? error.stack : String(error),
       );
       this.emitSessionError(socket, SESSION_ACTION_ERROR_MESSAGE);
+    }
+  }
+
+  private startTimerForRound(
+    eventId: string,
+    roundId: string,
+    durationSeconds: number,
+    endsAt: Date,
+  ): void {
+    this.roomStateService.startRoundTimer({
+      eventId,
+      roundId,
+      durationSeconds,
+      endsAt,
+      onExpire: () => this.handleRoundTimerExpired(eventId, roundId),
+    });
+  }
+
+  private async handleRoundTimerExpired(
+    eventId: string,
+    roundId: string,
+  ): Promise<void> {
+    const room = tastingRoom(eventId);
+
+    this.server.to(room).emit('voting_closed', {
+      roundId,
+      remainingSeconds: 0,
+      endsAt: null,
+      message: TIMER_EXPIRED_MESSAGE,
+    });
+
+    try {
+      const counter =
+        await this.tastingSessionService.getParticipantCounter(
+          eventId,
+          roundId,
+        );
+
+      this.server
+        .to(room)
+        .emit('participant_counter_updated', counter);
+    } catch (error) {
+      this.logger.error(
+        `Failed to broadcast counter after round ${roundId} expiry`,
+        error instanceof Error ? error.stack : String(error),
+      );
     }
   }
 

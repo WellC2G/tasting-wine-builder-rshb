@@ -17,6 +17,7 @@ interface StartRoundTimerParams {
   roundId: string;
   durationSeconds: number;
   endsAt: Date;
+  onExpire: () => void | Promise<void>;
 }
 
 interface ActiveRoundTimer {
@@ -25,12 +26,14 @@ interface ActiveRoundTimer {
   durationSeconds: number;
   endsAt: Date;
   timeout: NodeJS.Timeout;
+  onExpire: () => void | Promise<void>;
 }
 
 @Injectable()
 export class RoomStateService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoomStateService.name);
   private readonly timers = new Map<string, ActiveRoundTimer>();
+  private readonly pausedRemainingSeconds = new Map<string, number>();
   private readonly lastViewedRoundIds = new Map<string, string>();
 
   constructor(
@@ -67,18 +70,39 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
         );
 
         if (endsAt.getTime() <= Date.now()) {
+          await this.roundsRepository.update(
+            {
+              id: round.id,
+              eventId: round.eventId,
+              status: TastingRoundStatus.ACTIVE,
+            },
+            { status: TastingRoundStatus.VOTING_CLOSED },
+          );
+          this.setPausedRemainingSeconds(
+            round.eventId,
+            round.id,
+            0,
+          );
           this.logger.log(
-            `Active round ${round.id} timer already elapsed; ` +
-              'voting remains open until the host acts',
+            `Active round ${round.id} restored as paused at 00:00`,
           );
           continue;
         }
 
-        this.startRoundTimer({
+        const restoreKey = this.timerKey(round.eventId, round.id);
+        const timeout = setTimeout(() => {
+          void this.expireRound(restoreKey);
+        }, Math.max(0, endsAt.getTime() - Date.now()));
+
+        this.timers.set(restoreKey, {
           eventId: round.eventId,
           roundId: round.id,
           durationSeconds: round.durationSeconds,
           endsAt,
+          timeout,
+          onExpire: () => {
+            // No socket emissions before the gateway has initialized.
+          },
         });
 
         const remainingSeconds = Math.max(
@@ -100,7 +124,7 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Registers the only active timer for an event/round pair. Reaching zero
-   * only stops the countdown; the host explicitly pauses or finalizes voting.
+   * automatically moves the round to VOTING_CLOSED and pauses at 00:00.
    */
   startRoundTimer(params: StartRoundTimerParams): void {
     this.clearRoundTimer(params.eventId, params.roundId);
@@ -117,6 +141,7 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
       durationSeconds: params.durationSeconds,
       endsAt: params.endsAt,
       timeout,
+      onExpire: params.onExpire,
     });
   }
 
@@ -137,6 +162,45 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
       if (timer.eventId === eventId) {
         clearTimeout(timer.timeout);
         this.timers.delete(key);
+      }
+    }
+  }
+
+  setPausedRemainingSeconds(
+    eventId: string,
+    roundId: string,
+    remainingSeconds: number,
+  ): void {
+    this.pausedRemainingSeconds.set(
+      this.timerKey(eventId, roundId),
+      Math.max(0, Math.ceil(remainingSeconds)),
+    );
+  }
+
+  getPausedRemainingSeconds(
+    eventId: string,
+    roundId: string,
+  ): number | null {
+    return (
+      this.pausedRemainingSeconds.get(
+        this.timerKey(eventId, roundId),
+      ) ?? null
+    );
+  }
+
+  clearPausedRemainingSeconds(
+    eventId: string,
+    roundId: string,
+  ): void {
+    this.pausedRemainingSeconds.delete(this.timerKey(eventId, roundId));
+  }
+
+  clearEventPausedRemainingSeconds(eventId: string): void {
+    const prefix = `${eventId}:`;
+
+    for (const key of this.pausedRemainingSeconds.keys()) {
+      if (key.startsWith(prefix)) {
+        this.pausedRemainingSeconds.delete(key);
       }
     }
   }
@@ -179,6 +243,7 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.timers.clear();
+    this.pausedRemainingSeconds.clear();
     this.lastViewedRoundIds.clear();
   }
 
@@ -190,9 +255,35 @@ export class RoomStateService implements OnModuleInit, OnModuleDestroy {
     }
 
     this.timers.delete(key);
-    this.logger.log(
-      `Round ${timer.roundId} timer reached zero; voting remains open`,
-    );
+
+    try {
+      const result = await this.roundsRepository.update(
+        {
+          id: timer.roundId,
+          eventId: timer.eventId,
+          status: TastingRoundStatus.ACTIVE,
+        },
+        { status: TastingRoundStatus.VOTING_CLOSED },
+      );
+
+      this.setPausedRemainingSeconds(
+        timer.eventId,
+        timer.roundId,
+        0,
+      );
+
+      if (result.affected && result.affected > 0) {
+        this.logger.log(
+          `Round ${timer.roundId} timer reached zero; moved to paused`,
+        );
+        await timer.onExpire();
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to auto-pause round ${timer.roundId}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 
   private timerKey(eventId: string, roundId: string): string {

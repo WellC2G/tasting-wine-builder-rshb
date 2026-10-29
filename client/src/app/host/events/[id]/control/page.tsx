@@ -117,6 +117,8 @@ export default function HostControlPage() {
     votedCount: 0,
   });
   const [endsAt, setEndsAt] = useState<number | null>(null);
+  const [pausedRemainingSeconds, setPausedRemainingSeconds] =
+    useState(0);
   const [now, setNow] = useState(Date.now());
   const [pendingAction, setPendingAction] = useState<
     | 'event_start'
@@ -211,11 +213,20 @@ export default function HostControlPage() {
             detail.connectedParticipantCount,
           votedCount: 0,
         });
+        const initialStatus = liveRound?.status ?? initialRound?.status;
+        const initialRemaining =
+          liveRound?.remainingSeconds ??
+          initialRound?.durationSeconds ??
+          0;
+
         setEndsAt(
-          liveRound?.endsAt
-            ? new Date(liveRound.endsAt).getTime()
-            : computeEndsAt(initialRound),
+          initialStatus === 'ACTIVE'
+            ? liveRound?.endsAt
+              ? new Date(liveRound.endsAt).getTime()
+              : computeEndsAt(initialRound)
+            : null,
         );
+        setPausedRemainingSeconds(initialRemaining);
 
         if (initialRoundId) {
           const stats = await apiClient.ratings
@@ -279,6 +290,7 @@ export default function HostControlPage() {
       );
       setSelectedRoundId(payload.roundId);
       setEndsAt(new Date(payload.endsAt).getTime());
+      setPausedRemainingSeconds(payload.remainingSeconds);
       setSelectedRoundStats(null);
       setCounts((current) => ({
         ...current,
@@ -305,18 +317,20 @@ export default function HostControlPage() {
                   ? {
                       ...round,
                       status: 'VOTING_CLOSED',
-                      durationSeconds:
-                        payload.durationSeconds ??
-                        round.durationSeconds,
+                      durationSeconds: Math.max(
+                        1,
+                        payload.remainingSeconds,
+                      ),
                     }
                   : round,
               ),
             }
           : current,
       );
-      setEndsAt((current) =>
-        payload.roundId === selectedRoundId ? null : current,
-      );
+      if (payload.roundId === selectedRoundId) {
+        setEndsAt(null);
+        setPausedRemainingSeconds(payload.remainingSeconds);
+      }
       setPendingAction(null);
       setToast({ message: payload.message, tone: 'info' });
     };
@@ -340,11 +354,14 @@ export default function HostControlPage() {
           : current,
       );
 
-      setEndsAt((current) =>
-        payload.roundId === selectedRoundId
-          ? new Date(payload.endsAt).getTime()
-          : current,
-      );
+      if (payload.roundId === selectedRoundId) {
+        setPausedRemainingSeconds(payload.remainingSeconds);
+        setEndsAt(
+          payload.status === 'ACTIVE' && payload.endsAt
+            ? new Date(payload.endsAt).getTime()
+            : null,
+        );
+      }
       setPendingAction(null);
       setToast({
         message: `Добавлено время. Осталось ${formatCountdown(
@@ -369,6 +386,7 @@ export default function HostControlPage() {
       );
       setSelectedRoundStats(null);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPendingAction(null);
       setToast({ message: payload.message, tone: 'info' });
     };
@@ -425,6 +443,7 @@ export default function HostControlPage() {
       setSelectedRoundStats(payload.stats);
       setLastReveal(payload);
       setEndsAt(null);
+      setPausedRemainingSeconds(0);
       setPendingAction(null);
       setCounts((current) => ({
         ...current,
@@ -541,8 +560,12 @@ export default function HostControlPage() {
 
         if (live.currentRound) {
           setSelectedRoundId(live.currentRound.roundId);
+          setPausedRemainingSeconds(
+            live.currentRound.remainingSeconds,
+          );
           setEndsAt(
-            live.currentRound.endsAt
+            live.currentRound.status === 'ACTIVE' &&
+              live.currentRound.endsAt
               ? new Date(live.currentRound.endsAt).getTime()
               : null,
           );
@@ -643,9 +666,10 @@ export default function HostControlPage() {
     };
   }, [selectedRound?.id, selectedRound?.status]);
 
-  const remainingSeconds = endsAt
-    ? Math.max(0, Math.ceil((endsAt - now) / 1000))
-    : 0;
+  const remainingSeconds =
+    selectedRound?.status === 'ACTIVE' && endsAt
+      ? Math.max(0, Math.ceil((endsAt - now) / 1000))
+      : pausedRemainingSeconds;
   const votingProgress =
     counts.connectedCount > 0
       ? Math.min(
@@ -689,7 +713,8 @@ export default function HostControlPage() {
   const canResume =
     !controlsDisabled &&
     eventIsActive &&
-    selectedRound?.status === 'VOTING_CLOSED';
+    selectedRound?.status === 'VOTING_CLOSED' &&
+    remainingSeconds > 0;
   const canAddTime =
     !controlsDisabled &&
     eventIsActive &&
@@ -729,7 +754,10 @@ export default function HostControlPage() {
 
     setSelectedRoundId(round.id);
     setSelectedRoundStats(null);
-    setEndsAt(computeEndsAt(round));
+    setPausedRemainingSeconds(round.durationSeconds);
+    setEndsAt(
+      round.status === 'ACTIVE' ? computeEndsAt(round) : null,
+    );
 
     void apiClient.ratings
       .stats(round.id)

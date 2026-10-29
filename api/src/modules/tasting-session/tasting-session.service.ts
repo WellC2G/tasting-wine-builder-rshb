@@ -49,8 +49,12 @@ interface RevealBottleResult extends OwnedRound {
   wine: Wine;
 }
 
+interface PauseRoundResult extends OwnedRound {
+  remainingSeconds: number;
+}
+
 interface RoundTimerUpdateResult extends OwnedRound {
-  endsAt: Date;
+  endsAt: Date | null;
   remainingSeconds: number;
 }
 
@@ -180,6 +184,7 @@ export class TastingSessionService {
     event.status = TastingEventStatus.FINISHED;
     await this.eventsRepository.save(event);
     this.roomStateService.clearEventTimers(event.id);
+    this.roomStateService.clearEventPausedRemainingSeconds(event.id);
     this.publisher.emitToEvent(event.id, 'event_status_updated', {
       eventId: event.id,
       status: TastingEventStatus.FINISHED,
@@ -250,7 +255,10 @@ export class TastingSessionService {
     round.revealedAt = null;
 
     await this.roundsRepository.save(round);
-
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
     this.roomStateService.clearLastViewedRound(event.id);
 
     return {
@@ -264,7 +272,7 @@ export class TastingSessionService {
     eventId: string,
     roundId: string,
     hostId: string,
-  ): Promise<OwnedRound> {
+  ): Promise<PauseRoundResult> {
     const { event, round } = await this.findOwnedRound(
       eventId,
       roundId,
@@ -276,7 +284,15 @@ export class TastingSessionService {
     }
 
     if (round.status === TastingRoundStatus.VOTING_CLOSED) {
-      return { event, round };
+      return {
+        event,
+        round,
+        remainingSeconds:
+          this.roomStateService.getPausedRemainingSeconds(
+            event.id,
+            round.id,
+          ) ?? round.durationSeconds,
+      };
     }
 
     if (round.status !== TastingRoundStatus.ACTIVE) {
@@ -285,19 +301,25 @@ export class TastingSessionService {
       );
     }
 
-    const remainingSeconds = this.getRemainingSecondsForRound(
-      event.id,
-      round,
+    const remainingSeconds = Math.max(
+      0,
+      Math.ceil(
+        this.getRemainingSecondsForRound(event.id, round),
+      ),
     );
-    round.status = TastingRoundStatus.VOTING_CLOSED;
-    round.durationSeconds = Math.max(
-      1,
-      Math.ceil(remainingSeconds),
-    );
-    await this.roundsRepository.save(round);
-    this.roomStateService.clearRoundTimer(event.id, round.id);
 
-    return { event, round };
+    this.roomStateService.clearRoundTimer(event.id, round.id);
+    this.roomStateService.setPausedRemainingSeconds(
+      event.id,
+      round.id,
+      remainingSeconds,
+    );
+
+    round.status = TastingRoundStatus.VOTING_CLOSED;
+    round.durationSeconds = Math.max(1, remainingSeconds);
+    await this.roundsRepository.save(round);
+
+    return { event, round, remainingSeconds };
   }
 
   async revealBottle(
@@ -330,6 +352,10 @@ export class TastingSessionService {
     round.revealedAt = new Date();
     await this.roundsRepository.save(round);
     this.roomStateService.clearRoundTimer(event.id, round.id);
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
     this.roomStateService.setLastViewedRound(event.id, round.id);
 
     return { event, round, wine: round.wine };
@@ -356,8 +382,25 @@ export class TastingSessionService {
       );
     }
 
-    const duration = Math.max(1, round.durationSeconds);
+    const remainingSeconds =
+      this.roomStateService.getPausedRemainingSeconds(
+        event.id,
+        round.id,
+      ) ?? round.durationSeconds;
+
+    if (remainingSeconds <= 0) {
+      throw new BadRequestException(
+        'Время раунда истекло (00:00). Добавьте время перед продолжением раунда.',
+      );
+    }
+
+    const duration = Math.max(1, Math.ceil(remainingSeconds));
     const startedAt = new Date();
+
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
 
     round.status = TastingRoundStatus.ACTIVE;
     round.startedAt = startedAt;
@@ -407,26 +450,64 @@ export class TastingSessionService {
       );
     }
 
-    const currentRemaining =
-      round.status === TastingRoundStatus.ACTIVE
-        ? this.getRemainingSecondsForRound(event.id, round)
-        : round.durationSeconds;
-    const remainingSeconds = Math.max(
-      1,
-      Math.ceil(currentRemaining + additionalSeconds),
-    );
     const now = new Date();
 
-    round.durationSeconds = remainingSeconds;
-    if (round.status === TastingRoundStatus.ACTIVE) {
-      round.startedAt = now;
+    if (round.status === TastingRoundStatus.VOTING_CLOSED) {
+      const currentRemaining =
+        this.roomStateService.getPausedRemainingSeconds(
+          event.id,
+          round.id,
+        ) ?? round.durationSeconds;
+      const remainingSeconds = Math.max(
+        1,
+        Math.ceil(currentRemaining + additionalSeconds),
+      );
+
+      this.roomStateService.setPausedRemainingSeconds(
+        event.id,
+        round.id,
+        remainingSeconds,
+      );
+      round.durationSeconds = remainingSeconds;
+      await this.roundsRepository.save(round);
+
+      return {
+        event,
+        round,
+        endsAt: null,
+        remainingSeconds,
+      };
     }
+
+    const currentEndsAt = this.roomStateService.getEndsAt(
+      event.id,
+      round.id,
+    );
+    const baseTime =
+      currentEndsAt && currentEndsAt.getTime() > now.getTime()
+        ? currentEndsAt.getTime()
+        : now.getTime();
+    const endsAt = new Date(
+      baseTime + additionalSeconds * 1000,
+    );
+    const remainingSeconds = Math.max(
+      1,
+      Math.ceil((endsAt.getTime() - now.getTime()) / 1000),
+    );
+
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
+
+    round.startedAt = now;
+    round.durationSeconds = remainingSeconds;
     await this.roundsRepository.save(round);
 
     return {
       event,
       round,
-      endsAt: new Date(now.getTime() + remainingSeconds * 1000),
+      endsAt,
       remainingSeconds,
     };
   }
@@ -482,6 +563,10 @@ export class TastingSessionService {
     round.durationSeconds = duration;
     round.revealedAt = null;
     await this.roundsRepository.save(round);
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
     this.roomStateService.clearLastViewedRound(event.id);
 
     return {
@@ -516,6 +601,10 @@ export class TastingSessionService {
     round.status = TastingRoundStatus.SKIPPED;
     await this.roundsRepository.save(round);
     this.roomStateService.clearRoundTimer(event.id, round.id);
+    this.roomStateService.clearPausedRemainingSeconds(
+      event.id,
+      round.id,
+    );
 
     if (this.roomStateService.getLastViewedRound(event.id) === round.id) {
       this.roomStateService.clearLastViewedRound(event.id);
@@ -677,7 +766,10 @@ export class TastingSessionService {
           round.startedAt.getTime() + round.durationSeconds * 1000,
         )
       : null;
-    const endsAt = timerEndsAt ?? computedEndsAt;
+    const endsAt =
+      round.status === TastingRoundStatus.ACTIVE
+        ? timerEndsAt ?? computedEndsAt
+        : null;
     const remainingSeconds = this.calculateRemainingSeconds(
       event.id,
       round,
@@ -710,6 +802,16 @@ export class TastingSessionService {
     eventId: string,
     round: TastingRound,
   ): number {
+    const pausedRemaining =
+      this.roomStateService.getPausedRemainingSeconds(
+        eventId,
+        round.id,
+      );
+
+    if (pausedRemaining !== null) {
+      return pausedRemaining;
+    }
+
     const timerRemaining = this.roomStateService.getRemainingSeconds(
       eventId,
       round.id,
@@ -756,6 +858,16 @@ export class TastingSessionService {
 
     if (round.status === TastingRoundStatus.PENDING) {
       return round.durationSeconds;
+    }
+
+    if (round.status === TastingRoundStatus.VOTING_CLOSED) {
+      const pausedRemaining =
+        this.roomStateService.getPausedRemainingSeconds(
+          eventId,
+          round.id,
+        );
+
+      return pausedRemaining ?? round.durationSeconds;
     }
 
     return 0;

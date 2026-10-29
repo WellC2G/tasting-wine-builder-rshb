@@ -6,14 +6,15 @@ import { useParams } from 'next/navigation';
 import {
   ArrowLeft,
   Award,
-  CheckCircle2,
-  Clock3,
+  Grape,
   Hash,
   Hourglass,
+  MapPin,
   Radio,
   SkipForward,
   Users,
   Vote,
+  Wallet,
   Wine as WineIcon,
 } from 'lucide-react';
 
@@ -24,6 +25,7 @@ import { QrPanel } from '@/components/qr-panel';
 import { RadarProfileChart } from '@/components/radar-profile-chart';
 import { Toast } from '@/components/toast';
 import { WineDetailsCard } from '@/components/wine-details-card';
+import { WineImage } from '@/components/wine-image';
 import { useHostSession } from '@/hooks/use-host-session';
 import { useTastingSocket } from '@/hooks/use-tasting-socket';
 import {
@@ -37,8 +39,10 @@ import {
   MODE_LABELS,
   ROUND_STATUS_LABELS,
   SCALE_LABELS,
+  WINE_TYPE_LABELS,
   eventStatusTone,
   formatCountdown,
+  formatPrice,
   pluralize,
   roundStatusTone,
 } from '@/lib/format';
@@ -142,77 +146,126 @@ function LiveView({
   }
 
   const isOpen = event.mode === 'OPEN' && wine;
+  const statusLabel =
+    round.status === 'ACTIVE'
+      ? 'Идёт приём оценок'
+      : round.status === 'VOTING_CLOSED'
+        ? 'Голосование приостановлено'
+        : 'Ожидание старта раунда';
 
-  if (isOpen) {
+  if (isOpen && wine) {
     return (
-      <div className="flex h-full min-h-0 flex-col gap-5">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span
-              className={cn(
-                'inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium',
-                roundStatusTone(round.status),
-              )}
-            >
-              {ROUND_STATUS_LABELS[round.status]}
-            </span>
-            <span className="text-lg text-stone-400">
-              Раунд {round.orderNumber} ·{' '}
-              {MODE_LABELS[event.mode]} · {SCALE_LABELS[event.scaleType]}
-            </span>
-          </div>
-          <span className="rounded-full border border-white/10 px-4 py-2 text-lg text-stone-300">
-            {round.blindLabel}
-          </span>
-        </div>
-
-        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_440px] gap-6">
-          <div className="min-h-0">
-            {wine ? (
-              <WineDetailsCard wine={wine} large className="h-full" />
-            ) : null}
+      <div className="grid h-full min-h-0 grid-cols-[1.15fr_0.85fr] gap-6">
+        <article className="flex h-full min-h-0 flex-col overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/60 via-stone-900/70 to-stone-950">
+          <div className="relative h-80 shrink-0 overflow-hidden bg-gradient-to-br from-wine-900/50 via-stone-900 to-stone-950">
+            <WineImage
+              src={wine.imageUrl}
+              alt={wine.name}
+              className="rounded-none"
+              iconClassName="h-36 w-36 text-wine-300/70"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-stone-950/80 via-transparent to-transparent" />
+            <div className="absolute left-5 top-5 flex flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  'inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium backdrop-blur',
+                  roundStatusTone(round.status),
+                )}
+              >
+                {ROUND_STATUS_LABELS[round.status]}
+              </span>
+              <span className="inline-flex min-h-9 items-center rounded-full border border-white/15 bg-stone-950/60 px-3 text-xs text-stone-200 backdrop-blur">
+                {round.blindLabel}
+              </span>
+            </div>
           </div>
 
-          <div className="flex min-h-0 flex-col gap-5">
-            <div className="rounded-3xl border border-wine-400/25 bg-wine-500/10 p-7 text-center">
-              <p className="text-xs uppercase tracking-[0.2em] text-wine-300">
-                Осталось времени
-              </p>
-              <p className="mt-3 font-mono text-[92px] font-semibold leading-none tracking-tighter text-white">
-                {formatCountdown(remainingSeconds)}
-              </p>
-              <p className="mt-4 text-base text-stone-400">
-                {round.status === 'ACTIVE'
-                  ? 'Гости оценивают вино'
-                  : 'Голосование приостановлено'}
-              </p>
+          <div className="flex min-h-0 flex-1 flex-col p-6">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-wine-400/25 bg-wine-500/10 px-3 py-1 text-xs font-medium text-wine-100">
+                {WINE_TYPE_LABELS[wine.wineType]}
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-300">
+                {wine.vintage}
+              </span>
+              <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-stone-400">
+                Раунд {round.orderNumber}
+              </span>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                    Проголосовало
-                  </p>
-                  <p className="mt-2 text-5xl font-semibold text-white">
-                    {votedCount}
-                    <span className="text-2xl font-normal text-stone-500">
-                      {' '}
-                      / {connectedCount}
-                    </span>
-                  </p>
-                </div>
-                <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-200">
-                  <Users className="h-4 w-4" aria-hidden="true" />
-                  В сети: {connectedCount}
-                </span>
+            <h2 className="mt-4 text-balance text-5xl font-semibold leading-[1.02] tracking-tight text-white">
+              {wine.name}
+            </h2>
+            <p className="mt-2 text-2xl text-wine-200">{wine.winery}</p>
+
+            <div className="mt-auto grid grid-cols-3 gap-3 pt-6">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <MapPin className="h-5 w-5 text-wine-300" aria-hidden="true" />
+                <p className="mt-3 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                  Регион
+                </p>
+                <p className="mt-1 text-sm leading-5 text-stone-100">
+                  {wine.region}
+                </p>
               </div>
-              <div className="mt-5 h-4 overflow-hidden rounded-full bg-white/10">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
-                  style={{ width: `${voteProgress}%` }}
-                />
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <Grape className="h-5 w-5 text-wine-300" aria-hidden="true" />
+                <p className="mt-3 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                  Сортовой состав
+                </p>
+                <p className="mt-1 text-sm leading-5 text-stone-100">
+                  {wine.grapeVarieties}
+                </p>
               </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <Wallet className="h-5 w-5 text-wine-300" aria-hidden="true" />
+                <p className="mt-3 text-[10px] uppercase tracking-[0.16em] text-stone-500">
+                  Розничная цена
+                </p>
+                <p className="mt-1 text-sm leading-5 text-stone-100">
+                  {formatPrice(wine.retailPrice)}
+                </p>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <div className="flex h-full min-h-0 flex-col gap-5">
+          <div className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-3xl border border-wine-400/25 bg-wine-500/10 p-6 text-center">
+            <p className="text-xs uppercase tracking-[0.22em] text-wine-300">
+              Осталось времени
+            </p>
+            <p className="mt-3 font-mono text-8xl font-semibold leading-none tracking-tighter text-white">
+              {formatCountdown(remainingSeconds)}
+            </p>
+            <p className="mt-5 text-lg text-stone-300">{statusLabel}</p>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col justify-center rounded-3xl border border-white/10 bg-white/[0.03] p-7">
+            <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+              Проголосовало: {votedCount} из {connectedCount}
+            </p>
+            <p className="mt-3 text-6xl font-semibold tracking-tight text-white">
+              {votedCount}
+              <span className="text-3xl font-normal text-stone-500">
+                {' '}
+                / {connectedCount}
+              </span>
+            </p>
+            <div className="mt-4 flex items-center justify-between">
+              <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-sm text-emerald-200">
+                <Users className="h-4 w-4" aria-hidden="true" />
+                В сети: {connectedCount}
+              </span>
+              <span className="text-sm text-stone-500">
+                {voteProgress}% оценок
+              </span>
+            </div>
+            <div className="mt-5 h-4 overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
+                style={{ width: `${voteProgress}%` }}
+              />
             </div>
           </div>
         </div>
@@ -221,8 +274,8 @@ function LiveView({
   }
 
   return (
-    <div className="flex h-full flex-col justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/50 via-stone-900/60 to-stone-950 px-12 py-10">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className="flex h-full flex-col items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-wine-950/50 via-stone-900/60 to-stone-950 px-12 text-center">
+      <div className="flex flex-wrap items-center justify-center gap-3">
         <span
           className={cn(
             'inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium',
@@ -236,58 +289,45 @@ function LiveView({
         </span>
       </div>
 
-      <p className="mt-7 text-sm uppercase tracking-[0.26em] text-wine-300">
+      <p className="mt-6 text-sm uppercase tracking-[0.28em] text-wine-300">
         Раунд {round.orderNumber}
       </p>
       <h2
         data-testid="screen-current-label"
-        className="mt-3 text-balance text-[120px] font-semibold leading-[0.95] tracking-tighter text-white"
+        className="mt-3 text-balance text-7xl font-semibold leading-none tracking-tighter text-white"
       >
         {round.blindLabel}
       </h2>
-      <p className="mt-6 max-w-4xl text-2xl leading-9 text-stone-300">
-        {round.status === 'ACTIVE'
-          ? 'Гости оценивают образец. Дождитесь завершения голосования.'
-          : round.status === 'VOTING_CLOSED'
-            ? 'Голосование приостановлено. Ведущий скоро продолжит раунд или раскроет карточку.'
-            : 'Ожидание запуска раунда сомелье…'}
+
+      <p className="mt-7 font-mono text-8xl font-semibold leading-none tracking-tighter text-white">
+        {formatCountdown(remainingSeconds)}
       </p>
+      <p className="mt-4 text-xl text-stone-400">{statusLabel}</p>
 
-      <div className="mt-9 grid grid-cols-[440px_minmax(0,1fr)] gap-8">
-        <div className="rounded-3xl border border-wine-400/25 bg-wine-500/10 p-6 text-center">
-          <p className="text-xs uppercase tracking-[0.2em] text-wine-300">
-            Осталось времени
-          </p>
-          <p className="mt-2 font-mono text-[76px] font-semibold leading-none tracking-tighter text-white">
-            {formatCountdown(remainingSeconds)}
-          </p>
+      <div className="mt-8 w-full">
+        <div className="flex items-end justify-between gap-4 text-left">
+          <div>
+            <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+              Получено оценок
+            </p>
+            <p className="mt-1 text-4xl font-semibold text-white">
+              {votedCount}
+              <span className="text-xl font-normal text-stone-500">
+                {' '}
+                / {connectedCount}
+              </span>
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-4 py-2 text-sm text-emerald-200">
+            <Users className="h-4 w-4" aria-hidden="true" />
+            В сети: {connectedCount}
+          </span>
         </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
-                Получено оценок
-              </p>
-              <p className="mt-1 text-4xl font-semibold text-white">
-                {votedCount}
-                <span className="text-xl font-normal text-stone-500">
-                  {' '}
-                  / {connectedCount}
-                </span>
-              </p>
-            </div>
-            <span className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-200">
-              <Users className="h-4 w-4" aria-hidden="true" />
-              В сети: {connectedCount}
-            </span>
-          </div>
-          <div className="mt-4 h-3 overflow-hidden rounded-full bg-white/10">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
-              style={{ width: `${voteProgress}%` }}
-            />
-          </div>
+        <div className="mt-4 h-4 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-wine-600 to-wine-300 transition-all duration-500"
+            style={{ width: `${voteProgress}%` }}
+          />
         </div>
       </div>
     </div>
@@ -303,26 +343,24 @@ interface StatsViewProps {
 function StatsView({ round, wine, stats }: StatsViewProps) {
   return (
     <div className="flex h-full min-h-0 flex-col gap-5">
-      <div className="flex shrink-0 items-end justify-between gap-6">
+      <div className="grid shrink-0 grid-cols-[1.2fr_0.8fr] gap-5">
         <div className="min-w-0">
-          <p className="text-xs uppercase tracking-[0.24em] text-wine-300">
+          <p className="mb-2 text-xs uppercase tracking-[0.24em] text-wine-300">
             Образец раскрыт · {round.blindLabel}
           </p>
-          <h2
-            data-testid="screen-revealed-wine"
-            className="mt-2 truncate text-[52px] font-semibold leading-none tracking-tight text-white"
-          >
-            {wine.name}
-          </h2>
+          <div data-testid="screen-revealed-wine">
+            <WineDetailsCard wine={wine} />
+          </div>
         </div>
-        <div className="flex shrink-0 items-end gap-5">
-          <div className="text-right">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
-              Оценка Роберта Паркера
-            </p>
+
+        <div className="flex flex-col justify-center rounded-3xl border border-wine-400/20 bg-wine-500/10 p-5">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-wine-300">
+            Оценка Роберта Паркера
+          </p>
+          <div className="mt-1 flex items-end justify-between gap-4">
             <p
               data-testid="screen-score"
-              className="text-[82px] font-semibold leading-none tracking-tighter text-wine-200"
+              className="text-7xl font-semibold leading-none tracking-tighter text-wine-200"
             >
               {stats.meanScore !== null
                 ? stats.meanScore.toLocaleString('ru-RU', {
@@ -330,52 +368,51 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
                   })
                 : '—'}
             </p>
+            <span
+              className={cn(
+                'mb-1 inline-flex min-h-9 items-center rounded-full border px-3 text-xs font-medium',
+                qualityTone(stats.qualityCategory),
+              )}
+            >
+              {stats.qualityLabel ?? 'Категория не определена'}
+            </span>
           </div>
-          <span
-            className={cn(
-              'mb-2 inline-flex min-h-10 items-center rounded-full border px-4 text-sm font-medium',
-              qualityTone(stats.qualityCategory),
-            )}
-          >
-            {stats.qualityLabel ?? 'Категория не определена'}
-          </span>
+          <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl border border-white/10 bg-stone-950/40 p-2">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                Голосов
+              </p>
+              <p className="mt-1 text-xl font-semibold text-white">
+                {stats.totalRatings}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-stone-950/40 p-2">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                Валидных
+              </p>
+              <p className="mt-1 text-xl font-semibold text-white">
+                {stats.validVotesCount}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-stone-950/40 p-2">
+              <p className="text-[10px] uppercase tracking-[0.12em] text-stone-500">
+                Выбросов
+              </p>
+              <p className="mt-1 text-xl font-semibold text-white">
+                {stats.outliersRemovedCount}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)] gap-5">
-        <div className="flex min-h-0 flex-col gap-5">
-          <WineDetailsCard wine={wine} />
-
-          <div className="min-h-0 flex-1 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
-            <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-2xl border border-white/10 bg-stone-950/40 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-                  Всего голосов
-                </p>
-                <p className="mt-1 text-3xl font-semibold text-white">
-                  {stats.totalRatings}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-stone-950/40 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-                  Валидных
-                </p>
-                <p className="mt-1 text-3xl font-semibold text-white">
-                  {stats.validVotesCount}
-                </p>
-              </div>
-              <div className="rounded-2xl border border-white/10 bg-stone-950/40 p-3 text-center">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-stone-500">
-                  Выбросов
-                </p>
-                <p className="mt-1 text-3xl font-semibold text-white">
-                  {stats.outliersRemovedCount}
-                </p>
-              </div>
-            </div>
-            <div className="mt-5">
-              <CriteriaBars criteria={stats.criteriaMeans} compact />
-            </div>
+      <div className="grid min-h-0 flex-1 grid-cols-2 gap-5">
+        <div className="min-h-0 rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+          <p className="text-sm font-medium uppercase tracking-[0.16em] text-stone-400">
+            Критерии Паркера
+          </p>
+          <div className="mt-5">
+            <CriteriaBars criteria={stats.criteriaMeans} compact />
           </div>
         </div>
 
@@ -390,7 +427,7 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
             <div data-testid="screen-radar">
               <RadarProfileChart
                 profile={stats.radarProfile}
-                height={270}
+                height={260}
                 compact
               />
             </div>
@@ -401,7 +438,7 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
               Частые ароматические дескрипторы
             </p>
             {stats.aromaTagFrequency.length > 0 ? (
-              <div className="mt-4 flex flex-wrap content-start gap-2 overflow-hidden">
+              <div className="mt-3 flex flex-wrap content-start gap-2 overflow-hidden">
                 {stats.aromaTagFrequency.slice(0, 12).map((entry) => (
                   <span
                     key={entry.tag}
@@ -415,7 +452,7 @@ function StatsView({ round, wine, stats }: StatsViewProps) {
                 ))}
               </div>
             ) : (
-              <p className="mt-4 text-sm text-stone-500">
+              <p className="mt-3 text-sm text-stone-500">
                 Гости пока не отметили ароматические дескрипторы.
               </p>
             )}
@@ -1009,7 +1046,7 @@ export default function PresentationScreenPage() {
             />
           </div>
 
-          <div className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] gap-7">
+          <div className="mt-3 grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-7">
             <section className="min-h-0 overflow-hidden">
               {presentation === 'finished' ? (
                 <FinishedView
@@ -1037,84 +1074,20 @@ export default function PresentationScreenPage() {
               )}
             </section>
 
-            <aside className="flex h-full min-h-0 flex-col gap-4">
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <p className="mb-3 text-center text-[10px] font-medium uppercase tracking-[0.18em] text-stone-400">
+            <aside className="flex h-full min-h-0 flex-col justify-center">
+              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5">
+                <p className="mb-4 text-center text-[11px] font-medium uppercase tracking-[0.18em] text-stone-400">
                   Вход для гостей
                 </p>
                 <QrPanel
                   sessionPin={event.sessionPin}
-                  size={160}
-                  showPin={false}
+                  size={220}
                 />
-                <p className="mt-3 text-center font-mono text-2xl font-semibold tracking-[0.22em] text-white">
-                  {event.sessionPin}
-                </p>
-                <p className="mt-1 text-center text-[11px] leading-5 text-stone-500">
-                  Отсканируйте QR-код или введите PIN на телефоне
+                <p className="mt-4 text-center text-sm leading-6 text-stone-500">
+                  Отсканируйте QR-код камерой телефона или введите PIN
+                  на главной странице
                 </p>
               </div>
-
-              <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
-                <div className="flex items-center justify-between">
-                  <span className="inline-flex items-center gap-2 text-sm text-stone-400">
-                    <Users
-                      className="h-4 w-4 text-emerald-300"
-                      aria-hidden="true"
-                    />
-                    В сети
-                  </span>
-                  <span className="text-2xl font-semibold text-white">
-                    {counts.connectedCount}
-                  </span>
-                </div>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="inline-flex items-center gap-2 text-sm text-stone-400">
-                    <Vote
-                      className="h-4 w-4 text-sky-300"
-                      aria-hidden="true"
-                    />
-                    Проголосовало
-                  </span>
-                  <span className="text-2xl font-semibold text-white">
-                    {counts.votedCount}
-                  </span>
-                </div>
-              </div>
-
-              {round ? (
-                <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 text-center">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-stone-500">
-                    Раунд
-                  </p>
-                  <p className="mt-1 text-3xl font-semibold text-white">
-                    {round.orderNumber}
-                  </p>
-                  <p className="mt-1 text-sm text-stone-400">
-                    {ROUND_STATUS_LABELS[round.status]}
-                  </p>
-                </div>
-              ) : null}
-
-              {presentation === 'stats' && round ? (
-                <div className="flex items-center justify-center gap-2 rounded-2xl border border-emerald-400/20 bg-emerald-400/10 p-4 text-center text-sm text-emerald-200">
-                  <CheckCircle2
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
-                  Образец раскрыт
-                </div>
-              ) : null}
-
-              {round?.status === 'ACTIVE' ? (
-                <div className="mt-auto flex items-center justify-center gap-2 rounded-2xl border border-wine-400/20 bg-wine-500/10 p-4 text-center text-sm text-wine-100">
-                  <Clock3
-                    className="h-4 w-4"
-                    aria-hidden="true"
-                  />
-                  Таймер обновляется автоматически
-                </div>
-              ) : null}
             </aside>
           </div>
         </div>

@@ -245,7 +245,10 @@ export class TastingSessionService {
       );
     }
 
-    if (round.status !== TastingRoundStatus.PENDING) {
+    if (
+      round.status !== TastingRoundStatus.PENDING &&
+      round.status !== TastingRoundStatus.SKIPPED
+    ) {
       throw new ConflictException(
         'Этот раунд уже запускался. Используйте продолжение или перезапуск раунда',
       );

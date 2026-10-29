@@ -731,7 +731,8 @@ export default function HostControlPage() {
   const canStart =
     !controlsDisabled &&
     eventIsActive &&
-    selectedRound?.status === 'PENDING' &&
+    (selectedRound?.status === 'PENDING' ||
+      selectedRound?.status === 'SKIPPED') &&
     roundInProgress === null;
   const canLock =
     !controlsDisabled &&
@@ -1205,9 +1206,12 @@ export default function HostControlPage() {
                   <span className="block truncate text-sm font-medium text-white">
                     {round.blindLabel}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-stone-500">
-                    {round.wine.name}
-                  </span>
+                  {round.blindLabel.trim().toLowerCase() !==
+                  round.wine.name.trim().toLowerCase() ? (
+                    <span className="mt-0.5 block truncate text-xs text-stone-500">
+                      {round.wine.name}
+                    </span>
+                  ) : null}
                 </span>
                 <span
                   className={cn(
@@ -1238,7 +1242,9 @@ export default function HostControlPage() {
               <h2 className="mt-1 text-2xl font-semibold text-white">
                 {selectedRound?.blindLabel ?? 'Раунд не выбран'}
               </h2>
-              {selectedRound ? (
+              {selectedRound &&
+              selectedRound.blindLabel.trim().toLowerCase() !==
+                selectedRound.wine.name.trim().toLowerCase() ? (
                 <p className="mt-1 text-sm text-stone-400">
                   {selectedRound.wine.name}
                 </p>
@@ -1293,7 +1299,7 @@ export default function HostControlPage() {
                   ) : (
                     <RotateCcw className="h-4 w-4" aria-hidden="true" />
                   )}
-                  Начать раунд заново
+                  Начать заново
                 </button>
                 <button
                   type="button"
@@ -1434,18 +1440,30 @@ export default function HostControlPage() {
                 следующего раунда. Оценки этого образца удалены.
               </p>
               {eventIsActive ? (
-                <button
-                  type="button"
-                  data-testid="control-restart-skipped"
-                  onClick={() =>
-                    selectedRound && setRestartTarget(selectedRound)
-                  }
-                  disabled={!canRestart}
-                  className="mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                  Начать раунд заново
-                </button>
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    data-testid="control-start-skipped"
+                    onClick={handleStartRound}
+                    disabled={!canStart}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Play className="h-4 w-4" aria-hidden="true" />
+                    Запустить раунд
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="control-restart-skipped"
+                    onClick={() =>
+                      selectedRound && setRestartTarget(selectedRound)
+                    }
+                    disabled={!canRestart}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <RotateCcw className="h-4 w-4" aria-hidden="true" />
+                    Начать заново
+                  </button>
+                </div>
               ) : null}
             </div>
           ) : (
@@ -1475,9 +1493,7 @@ export default function HostControlPage() {
 
               {canAddTime ? (
                 <div className="mt-2 flex items-center gap-2">
-                  <span className="text-xs text-stone-500">
-                    Добавить время:
-                  </span>
+                  <span className="text-xs text-stone-500">Время:</span>
                   <button
                     type="button"
                     data-testid="control-add-30"
@@ -1486,7 +1502,7 @@ export default function HostControlPage() {
                     className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    30 сек
+                    +30 сек
                   </button>
                   <button
                     type="button"
@@ -1496,7 +1512,7 @@ export default function HostControlPage() {
                     className="inline-flex min-h-10 items-center gap-1 rounded-lg border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 disabled:opacity-40"
                   >
                     <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-                    1 мин
+                    +1 мин
                   </button>
                 </div>
               ) : null}
@@ -1508,24 +1524,7 @@ export default function HostControlPage() {
                 />
               </div>
 
-              <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                <button
-                  type="button"
-                  data-testid="control-start-round"
-                  onClick={handleStartRound}
-                  disabled={!canStart}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {pendingAction === 'start' ? (
-                    <Loader2
-                      className="h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                  ) : (
-                    <Play className="h-4 w-4" aria-hidden="true" />
-                  )}
-                  Запустить раунд
-                </button>
+              <div className="mt-5 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                 {selectedRound?.status === 'ACTIVE' ? (
                   <button
                     type="button"
@@ -1542,14 +1541,19 @@ export default function HostControlPage() {
                     ) : (
                       <Pause className="h-4 w-4" aria-hidden="true" />
                     )}
-                    Остановить раунд
+                    Пауза
                   </button>
-                ) : (
+                ) : selectedRound?.status === 'VOTING_CLOSED' ? (
                   <button
                     type="button"
                     data-testid="control-resume-round"
                     onClick={handleResumeRound}
                     disabled={!canResume}
+                    title={
+                      remainingSeconds <= 0
+                        ? 'Добавьте время перед продолжением раунда'
+                        : undefined
+                    }
                     className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-sky-400/30 bg-sky-400/10 px-4 text-sm font-semibold text-sky-100 transition hover:bg-sky-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     {pendingAction === 'resume' ? (
@@ -1562,7 +1566,26 @@ export default function HostControlPage() {
                     )}
                     Продолжить раунд
                   </button>
+                ) : (
+                  <button
+                    type="button"
+                    data-testid="control-start-round"
+                    onClick={handleStartRound}
+                    disabled={!canStart}
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {pendingAction === 'start' ? (
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Play className="h-4 w-4" aria-hidden="true" />
+                    )}
+                    Запустить раунд
+                  </button>
                 )}
+
                 <button
                   type="button"
                   data-testid="control-reveal-bottle"
@@ -1579,12 +1602,20 @@ export default function HostControlPage() {
                     <Eye className="h-4 w-4" aria-hidden="true" />
                   )}
                   {event.mode === 'OPEN'
-                    ? 'Завершить голосование'
+                    ? 'Завершить раунд'
                     : 'Раскрыть карту'}
                 </button>
               </div>
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {selectedRound?.status === 'VOTING_CLOSED' &&
+              remainingSeconds <= 0 ? (
+                <p className="mt-2 text-xs leading-5 text-amber-200">
+                  Время истекло. Добавьте время, чтобы продолжить
+                  раунд.
+                </p>
+              ) : null}
+
+              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
                 <button
                   type="button"
                   data-testid="control-restart-round-secondary"
@@ -1592,10 +1623,10 @@ export default function HostControlPage() {
                     selectedRound && setRestartTarget(selectedRound)
                   }
                   disabled={!canRestart}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-4 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-400/25 px-3 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/10 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <RotateCcw className="h-4 w-4" aria-hidden="true" />
-                  Начать раунд заново
+                  Начать заново
                 </button>
                 <button
                   type="button"
@@ -1604,7 +1635,7 @@ export default function HostControlPage() {
                     selectedRound && setSkipTarget(selectedRound)
                   }
                   disabled={!canSkip}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-4 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <SkipForward className="h-4 w-4" aria-hidden="true" />
                   Пропустить вино

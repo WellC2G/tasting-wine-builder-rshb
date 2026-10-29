@@ -725,57 +725,59 @@ export default function HostEventsPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <Link
                       href={`/host/events/${event.id}/control`}
-                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold text-stone-950 transition hover:bg-stone-200"
+                      className="inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl bg-white px-3 text-xs font-semibold text-stone-950 transition hover:bg-stone-200 sm:text-sm"
                     >
                       <SlidersHorizontal
-                        className="h-4 w-4"
+                        className="h-4 w-4 shrink-0"
                         aria-hidden="true"
                       />
-                      {event.status === 'DRAFT'
-                        ? 'Пульт'
-                        : 'Просмотр статистики'}
+                      {event.status === 'DRAFT' ? 'Пульт' : 'Статистика'}
                     </Link>
                     <Link
                       href={`/host/events/${event.id}/screen`}
-                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-stone-200 transition hover:bg-white/5"
+                      className="inline-flex h-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl border border-white/10 px-3 text-xs font-medium text-stone-200 transition hover:bg-white/5 sm:text-sm"
                     >
                       <Monitor
-                        className="h-4 w-4"
+                        className="h-4 w-4 shrink-0"
                         aria-hidden="true"
                       />
                       Экран
                     </Link>
                   </div>
 
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 grid grid-cols-3 gap-2">
                     {event.status === 'DRAFT' ? (
                       <button
                         type="button"
                         onClick={() => void openEditEvent(event)}
-                        className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 px-2 text-[11px] font-medium text-stone-300 transition hover:bg-white/5 hover:text-white"
+                        className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white sm:text-sm"
                       >
-                        <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
-                        Редактировать
+                        <Pencil
+                          className="h-3.5 w-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                        Изменить
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={() => void handleExport(event)}
                         disabled={exportingEventId === event.id}
-                        className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-wine-400/30 bg-wine-500/10 px-2 text-[11px] font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50"
+                        title="Выгрузить в Народный рейтинг"
+                        className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-wine-400/30 bg-wine-500/10 px-2 text-xs font-semibold text-wine-100 transition hover:bg-wine-500/20 disabled:opacity-50 sm:text-sm"
                       >
                         {exportingEventId === event.id ? (
                           <Loader2
-                            className="h-3.5 w-3.5 animate-spin"
+                            className="h-3.5 w-3.5 shrink-0 animate-spin"
                             aria-hidden="true"
                           />
                         ) : (
                           <Download
-                            className="h-3.5 w-3.5"
+                            className="h-3.5 w-3.5 shrink-0"
                             aria-hidden="true"
                           />
                         )}
-                        Выгрузить в Народный рейтинг
+                        В рейтинг
                       </button>
                     )}
 
@@ -783,15 +785,18 @@ export default function HostEventsPage() {
                       type="button"
                       onClick={() => void handleCopy(event)}
                       disabled={copyingEventId === event.id}
-                      className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-white/10 px-2 text-[11px] font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-50"
+                      className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-white/10 px-2 text-xs font-medium text-stone-300 transition hover:bg-white/5 hover:text-white disabled:opacity-50 sm:text-sm"
                     >
                       {copyingEventId === event.id ? (
                         <Loader2
-                          className="h-3.5 w-3.5 animate-spin"
+                          className="h-3.5 w-3.5 shrink-0 animate-spin"
                           aria-hidden="true"
                         />
                       ) : (
-                        <Copy className="h-3.5 w-3.5" aria-hidden="true" />
+                        <Copy
+                          className="h-3.5 w-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
                       )}
                       Копировать
                     </button>
@@ -799,9 +804,12 @@ export default function HostEventsPage() {
                     <button
                       type="button"
                       onClick={() => setDeleteTarget(event)}
-                      className="inline-flex min-h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-400/20 px-2 text-[11px] font-medium text-rose-200 transition hover:bg-rose-400/10"
+                      className="inline-flex h-11 items-center justify-center gap-1 whitespace-nowrap rounded-xl border border-rose-400/20 px-2 text-xs font-medium text-rose-200 transition hover:bg-rose-400/10 sm:text-sm"
                     >
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                      <Trash2
+                        className="h-3.5 w-3.5 shrink-0"
+                        aria-hidden="true"
+                      />
                       Удалить
                     </button>
                   </div>

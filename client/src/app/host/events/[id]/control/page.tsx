@@ -20,8 +20,11 @@ import {
   QrCode,
   Radio,
   RotateCcw,
+  Search,
   Send,
   SkipForward,
+  Trash2,
+  UserRound,
   Users,
   Vote,
   Wine as WineIcon,
@@ -58,6 +61,7 @@ import { qualityTone } from '@/lib/rating';
 import { clearHostSession } from '@/lib/session';
 import type {
   EventDetail,
+  EventParticipant,
   EventRound,
   ExportResponse,
   RoundStats,
@@ -68,8 +72,10 @@ import type {
   EventFinishedPayload,
   EventStatusUpdatedPayload,
   ParticipantCounterPayload,
+  ParticipantsUpdatedPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
+  RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
   VotingClosedPayload,
@@ -113,6 +119,7 @@ export default function HostControlPage() {
   const [counts, setCounts] = useState<ParticipantCounterPayload>({
     eventId,
     roundId: null,
+    participantCount: 0,
     connectedCount: 0,
     votedCount: 0,
   });
@@ -153,6 +160,14 @@ export default function HostControlPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [lastReveal, setLastReveal] =
     useState<BottleRevealedPayload | null>(null);
+  const [participants, setParticipants] = useState<EventParticipant[]>(
+    [],
+  );
+  const [participantSearch, setParticipantSearch] = useState('');
+  const [removeTarget, setRemoveTarget] =
+    useState<EventParticipant | null>(null);
+  const [removingParticipant, setRemovingParticipant] =
+    useState(false);
   const [toast, setToast] = useState<ToastState>(null);
 
   useEffect(() => {
@@ -173,11 +188,15 @@ export default function HostControlPage() {
       setLoadError(null);
 
       try {
-        const [detail, live, allEvents] = await Promise.all([
-          apiClient.events.get(eventId),
-          apiClient.events.liveState(eventId).catch(() => null),
-          apiClient.events.list().catch(() => []),
-        ]);
+        const [detail, live, allEvents, eventParticipants] =
+          await Promise.all([
+            apiClient.events.get(eventId),
+            apiClient.events.liveState(eventId).catch(() => null),
+            apiClient.events.list().catch(() => []),
+            apiClient.events
+              .participants(eventId)
+              .catch(() => []),
+          ]);
 
         if (cancelled) {
           return;
@@ -222,10 +241,13 @@ export default function HostControlPage() {
           ) ?? null;
 
         setEvent(mergedEvent);
+        setParticipants(eventParticipants);
         setSelectedRoundId(initialRoundId);
         setCounts({
           eventId,
           roundId: liveRound?.roundId ?? null,
+          participantCount:
+            live?.participantCount ?? detail.participantCount,
           connectedCount:
             live?.connectedParticipantCount ??
             detail.connectedParticipantCount,
@@ -504,6 +526,7 @@ export default function HostControlPage() {
         return {
           ...current,
           eventId,
+          participantCount: payload.participantCount,
           connectedCount: payload.connectedCount,
           ...(matchesSelectedRound
             ? {
@@ -513,6 +536,34 @@ export default function HostControlPage() {
             : {}),
         };
       });
+    };
+
+    const handleParticipantsUpdated = (
+      payload: ParticipantsUpdatedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      setParticipants(payload.participants);
+    };
+
+    const handleRoundStatsUpdated = (
+      payload: RoundStatsUpdatedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      if (payload.roundId === selectedRoundId) {
+        setSelectedRoundStats(payload.stats);
+      }
+
+      setLastReveal((current) =>
+        current && current.roundId === payload.roundId
+          ? { ...current, stats: payload.stats }
+          : current,
+      );
     };
 
     const handleError = (payload: SocketMessagePayload) => {
@@ -528,6 +579,11 @@ export default function HostControlPage() {
     socket.on('event_status_updated', handleEventStatusUpdated);
     socket.on('event_finished', handleEventFinished);
     socket.on('participant_counter_updated', handleCounter);
+    socket.on(
+      'participants_updated',
+      handleParticipantsUpdated,
+    );
+    socket.on('round_stats_updated', handleRoundStatsUpdated);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
@@ -540,6 +596,11 @@ export default function HostControlPage() {
       socket.off('event_status_updated', handleEventStatusUpdated);
       socket.off('event_finished', handleEventFinished);
       socket.off('participant_counter_updated', handleCounter);
+      socket.off(
+        'participants_updated',
+        handleParticipantsUpdated,
+      );
+      socket.off('round_stats_updated', handleRoundStatsUpdated);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
@@ -659,6 +720,17 @@ export default function HostControlPage() {
       rounds.find((round) => round.id === selectedRoundId) ?? null,
     [rounds, selectedRoundId],
   );
+  const filteredParticipants = useMemo(() => {
+    const query = participantSearch.trim().toLocaleLowerCase('ru');
+
+    if (!query) {
+      return participants;
+    }
+
+    return participants.filter((participant) =>
+      participant.nickname.toLocaleLowerCase('ru').includes(query),
+    );
+  }, [participants, participantSearch]);
 
   useEffect(() => {
     if (!selectedRound || selectedRound.status !== 'REVEALED') {
@@ -922,6 +994,44 @@ export default function HostControlPage() {
       eventId,
       roundId: selectedRound.id,
     });
+  };
+
+  const handleRemoveParticipant = async () => {
+    if (!removeTarget) {
+      return;
+    }
+
+    setRemovingParticipant(true);
+
+    try {
+      await apiClient.events.removeParticipant(
+        eventId,
+        removeTarget.id,
+      );
+      setParticipants((current) =>
+        current.filter(
+          (participant) => participant.id !== removeTarget.id,
+        ),
+      );
+      setRemoveTarget(null);
+      setToast({
+        message: 'Участник удалён, оценки пересчитаны',
+        tone: 'success',
+      });
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        clearHostSession();
+        router.replace('/host/login');
+        return;
+      }
+
+      setToast({
+        message: getApiErrorMessage(error),
+        tone: 'error',
+      });
+    } finally {
+      setRemovingParticipant(false);
+    }
   };
 
   const handleExport = async () => {
@@ -1709,7 +1819,131 @@ export default function HostControlPage() {
             </div>
           </section>
         ) : null}
+
+        <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.03] p-4 sm:p-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-[0.18em] text-stone-500">
+                Гости
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-white">
+                Участники дегустации
+              </h2>
+            </div>
+            <p className="text-sm text-stone-400">
+              Участники: {participants.length} · В сети:{' '}
+              {counts.connectedCount}
+            </p>
+          </div>
+
+          <div className="relative mt-4">
+            <Search
+              className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-500"
+              aria-hidden="true"
+            />
+            <input
+              data-testid="control-participant-search"
+              value={participantSearch}
+              onChange={(event) =>
+                setParticipantSearch(event.target.value)
+              }
+              placeholder="Поиск по имени участника…"
+              className="min-h-12 w-full rounded-xl border border-white/10 bg-white/[0.04] pl-11 pr-4 text-sm text-white outline-none placeholder:text-stone-500 focus:border-wine-400/60 focus:ring-2 focus:ring-wine-500/20"
+            />
+          </div>
+
+          <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+            {filteredParticipants.length === 0 ? (
+              <p className="rounded-2xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-stone-500">
+                {participants.length === 0
+                  ? 'Пока никто не присоединился'
+                  : 'Участники не найдены'}
+              </p>
+            ) : (
+              filteredParticipants.map((participant) => (
+                <div
+                  key={participant.id}
+                  className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-stone-950/40 px-3 py-2"
+                >
+                  <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-wine-200">
+                    <UserRound
+                      className="h-5 w-5"
+                      aria-hidden="true"
+                    />
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-stone-950',
+                        participant.isOnline
+                          ? 'bg-emerald-400'
+                          : 'bg-stone-600',
+                      )}
+                    />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-white">
+                      {participant.nickname}
+                    </p>
+                    <p className="mt-0.5 text-xs text-stone-500">
+                      {participant.isOnline
+                        ? 'В сети'
+                        : 'Не в сети'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setRemoveTarget(participant)}
+                    className="inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border border-rose-400/20 px-3 text-xs font-medium text-rose-200 transition hover:bg-rose-400/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Удалить
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
       </div>
+
+      <Modal
+        open={removeTarget !== null}
+        onClose={() => setRemoveTarget(null)}
+        title="Удалить участника?"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Вы уверены, что хотите удалить участника «
+          {removeTarget?.nickname ?? ''}» из дегустации? Все его оценки
+          в этом мероприятии будут аннулированы.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setRemoveTarget(null)}
+            disabled={removingParticipant}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-remove-participant-confirm"
+            onClick={() => void handleRemoveParticipant()}
+            disabled={removingParticipant}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-rose-600 px-5 text-sm font-semibold text-white transition hover:bg-rose-500 disabled:opacity-50"
+          >
+            {removingParticipant ? (
+              <Loader2
+                className="h-4 w-4 animate-spin"
+                aria-hidden="true"
+              />
+            ) : (
+              <Trash2 className="h-4 w-4" aria-hidden="true" />
+            )}
+            Удалить участника
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={qrOpen}

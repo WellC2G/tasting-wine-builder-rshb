@@ -22,6 +22,7 @@ import {
 
 import { ConnectionBanner } from '@/components/connection-banner';
 import { CriteriaBars } from '@/components/criteria-bars';
+import { Modal } from '@/components/modal';
 import { PageLoader } from '@/components/page-loader';
 import { RadarProfileChart } from '@/components/radar-profile-chart';
 import { Toast } from '@/components/toast';
@@ -51,6 +52,7 @@ import {
 } from '@/lib/rating';
 import { probeClientNetwork } from '@/lib/network-probe';
 import {
+  clearGuestSession,
   clearStoredFormDraft,
   clearStoredRating,
   getGuestSession,
@@ -83,6 +85,7 @@ import type {
   EventStatusUpdatedPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
+  RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
   VotingClosedPayload,
@@ -193,6 +196,9 @@ export default function GuestJoinPage() {
     useState(0);
   const [now, setNow] = useState(Date.now());
   const [waitingMessage, setWaitingMessage] = useState<string | null>(
+    null,
+  );
+  const [removedMessage, setRemovedMessage] = useState<string | null>(
     null,
   );
   const activeRoundIdRef = useRef<string | null>(null);
@@ -652,6 +658,33 @@ export default function GuestJoinPage() {
       });
     };
 
+    const handleRoundStatsUpdated = (
+      payload: RoundStatsUpdatedPayload,
+    ) => {
+      if (
+        payload.eventId === eventInfo?.eventId &&
+        (activeRoundIdRef.current === payload.roundId ||
+          currentRound?.roundId === payload.roundId)
+      ) {
+        setStats(payload.stats);
+      }
+    };
+
+    const handleParticipantRemoved = (payload: {
+      eventId: string;
+      participantId: string;
+      message: string;
+    }) => {
+      if (payload.eventId !== eventInfo?.eventId) {
+        return;
+      }
+
+      clearGuestSession(sessionPin);
+      setGuestToken(null);
+      setRemovedMessage(payload.message);
+      socket.disconnect();
+    };
+
     const handleError = (payload: SocketMessagePayload) => {
       setToast({ message: payload.message, tone: 'error' });
     };
@@ -663,6 +696,8 @@ export default function GuestJoinPage() {
     socket.on('bottle_revealed', handleBottleRevealed);
     socket.on('event_status_updated', handleEventStatusUpdated);
     socket.on('event_finished', handleEventFinished);
+    socket.on('participant_removed', handleParticipantRemoved);
+    socket.on('round_stats_updated', handleRoundStatsUpdated);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
@@ -674,11 +709,13 @@ export default function GuestJoinPage() {
       socket.off('bottle_revealed', handleBottleRevealed);
       socket.off('event_status_updated', handleEventStatusUpdated);
       socket.off('event_finished', handleEventFinished);
+      socket.off('participant_removed', handleParticipantRemoved);
+      socket.off('round_stats_updated', handleRoundStatsUpdated);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, eventInfo?.eventId]);
+  }, [socket, eventInfo?.eventId, sessionPin]);
 
   useEffect(() => {
     if (
@@ -699,15 +736,26 @@ export default function GuestJoinPage() {
           await hydrateLiveState(live, guestToken);
         }
       })
-      .catch(() => {
-        // The connection banner already reports transport problems.
+      .catch((error: unknown) => {
+        if (
+          !cancelled &&
+          error instanceof ApiError &&
+          (error.status === 401 || error.status === 404)
+        ) {
+          clearGuestSession(sessionPin);
+          setGuestToken(null);
+          setRemovedMessage(
+            'Вы были удалены организатором из текущей дегустации.',
+          );
+          socket.disconnect();
+        }
       });
 
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [socket, connectCount, guestToken, eventInfo?.eventId]);
+  }, [socket, connectCount, guestToken, eventInfo?.eventId, sessionPin]);
 
   const handleJoinSubmit = async (
     event: React.FormEvent<HTMLFormElement>,
@@ -1465,6 +1513,23 @@ export default function GuestJoinPage() {
           </div>
         ) : null}
       </div>
+
+      <Modal
+        open={removedMessage !== null}
+        onClose={() => undefined}
+        title="Доступ к сессии прекращён"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          {removedMessage}
+        </p>
+        <Link
+          href="/"
+          className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500"
+        >
+          Вернуться на главную
+        </Link>
+      </Modal>
 
       <Toast
         message={toast?.message ?? null}

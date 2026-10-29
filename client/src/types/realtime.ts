@@ -1,4 +1,5 @@
 import type {
+  EventParticipant,
   RevealedWine,
   RoundStats,
   ScaleType,
@@ -62,8 +63,26 @@ export interface BottleRevealedPayload {
 export interface ParticipantCounterPayload {
   eventId: string;
   roundId: string | null;
+  participantCount: number;
   connectedCount: number;
   votedCount: number;
+}
+
+export interface ParticipantsUpdatedPayload {
+  eventId: string;
+  participants: EventParticipant[];
+}
+
+export interface ParticipantRemovedPayload {
+  eventId: string;
+  participantId: string;
+  message: string;
+}
+
+export interface RoundStatsUpdatedPayload {
+  eventId: string;
+  roundId: string;
+  stats: RoundStats;
 }
 
 export interface JoinEventPayload {
@@ -104,6 +123,9 @@ export interface ServerToClientEvents {
   participant_counter_updated: (
     payload: ParticipantCounterPayload,
   ) => void;
+  participants_updated: (payload: ParticipantsUpdatedPayload) => void;
+  participant_removed: (payload: ParticipantRemovedPayload) => void;
+  round_stats_updated: (payload: RoundStatsUpdatedPayload) => void;
   auth_error: (payload: SocketMessagePayload) => void;
   session_error: (payload: SocketMessagePayload) => void;
 }
@@ -112,6 +134,10 @@ export interface ClientToServerEvents {
   'host:join_event': (payload: JoinEventPayload) => void;
   'host:start_event': (payload: JoinEventPayload) => void;
   'host:finish_event': (payload: JoinEventPayload) => void;
+  'host:remove_participant': (payload: {
+    eventId: string;
+    participantId: string;
+  }) => void;
   'host:start_round': (payload: StartRoundPayload) => void;
   'host:lock_voting': (payload: RoundActionPayload) => void;
   'host:resume_round': (payload: RoundActionPayload) => void;

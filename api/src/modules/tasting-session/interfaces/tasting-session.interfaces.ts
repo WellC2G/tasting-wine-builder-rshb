@@ -24,8 +24,14 @@ export interface RestartRoundPayload extends RoundActionPayload {
 export interface ParticipantCounterPayload {
   eventId: string;
   roundId: string | null;
+  participantCount: number;
   connectedCount: number;
   votedCount: number;
+}
+
+export interface RemoveParticipantPayload {
+  eventId: string;
+  participantId: string;
 }
 
 export interface JoinEventPayload {

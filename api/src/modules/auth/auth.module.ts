@@ -5,6 +5,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { TastingEvent } from '../events/entities/tasting-event.entity';
 import { TastingRound } from '../events/entities/tasting-round.entity';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { AuthController } from './auth.controller';
 import { JWT_EXPIRES_IN } from './auth.constants';
 import { Participant } from './entities/participant.entity';
@@ -18,6 +19,7 @@ import { ServerPublicIpService } from './services/server-public-ip.service';
 @Module({
   imports: [
     ConfigModule,
+    RealtimeModule,
     TypeOrmModule.forFeature([
       User,
       Participant,

@@ -19,6 +19,7 @@ import {
   type RequestContext,
 } from '../../../common/http/request-context';
 import { WineResponseDto } from '../../catalog/dto/wine-response.dto';
+import { ParticipantRosterService } from '../../realtime/participant-roster.service';
 import {
   TastingEvent,
   TastingEventStatus,
@@ -71,6 +72,7 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly fingerprintService: FingerprintService,
     private readonly serverPublicIpService: ServerPublicIpService,
+    private readonly participantRosterService: ParticipantRosterService,
   ) {}
 
   async register(dto: RegisterDto): Promise<UserResponseDto> {
@@ -217,6 +219,11 @@ export class AuthService {
     });
 
     const currentRound = this.selectCurrentRound(event.rounds);
+
+    await this.participantRosterService.broadcastRosterAndCounter(
+      event.id,
+      currentRound?.id,
+    );
 
     return {
       participantId: participant.id,

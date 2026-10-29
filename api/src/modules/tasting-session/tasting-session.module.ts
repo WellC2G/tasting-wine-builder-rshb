@@ -33,6 +33,6 @@ import { RoomStateService } from './room-state.service';
     RoomStateService,
     LiveStateAccessGuard,
   ],
-  exports: [TastingSessionService],
+  exports: [TastingSessionService, TastingSessionGateway],
 })
 export class TastingSessionModule {}

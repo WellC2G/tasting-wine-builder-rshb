@@ -24,6 +24,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import type { AuthenticatedRequest } from '../auth/interfaces/authenticated-request.interface';
 import { CreateEventDto } from './dto/create-event.dto';
+import { EventParticipantDto } from './dto/event-participant.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { EventRoundResponseDto } from './dto/event-round-response.dto';
 import { EventSummaryResponseDto } from './dto/event-summary-response.dto';
@@ -35,6 +36,13 @@ const eventIdPipe = new ParseUUIDPipe({
   exceptionFactory: () =>
     new BadRequestException(
       'Идентификатор мероприятия должен быть корректным UUID',
+    ),
+});
+
+const participantIdPipe = new ParseUUIDPipe({
+  exceptionFactory: () =>
+    new BadRequestException(
+      'Идентификатор участника должен быть корректным UUID',
     ),
 });
 
@@ -83,6 +91,68 @@ export class EventsController {
     @Req() request: AuthenticatedRequest,
   ): Promise<EventSummaryResponseDto[]> {
     return this.eventsService.findAllForHost(request.user.sub);
+  }
+
+  @Get(':id/participants')
+  @ApiOperation({
+    summary: 'Участники мероприятия',
+    description:
+      'Возвращает зарегистрированных участников мероприятия по времени входа.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Список участников',
+    type: EventParticipantDto,
+    isArray: true,
+  })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({ status: 404, description: 'Мероприятие не найдено' })
+  findParticipants(
+    @Param('id', eventIdPipe) id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<EventParticipantDto[]> {
+    return this.eventsService.listParticipants(id, request.user.sub);
+  }
+
+  @Delete(':id/participants/:participantId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Удалить участника',
+    description:
+      'Удаляет участника и все его оценки, пересчитывает статистику ' +
+      'и синхронизирует изменение со всеми экранами.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Идентификатор мероприятия',
+    format: 'uuid',
+  })
+  @ApiParam({
+    name: 'participantId',
+    description: 'Идентификатор участника',
+    format: 'uuid',
+  })
+  @ApiResponse({ status: 204, description: 'Участник удалён' })
+  @ApiResponse({ status: 401, description: 'Требуется авторизация' })
+  @ApiResponse({
+    status: 404,
+    description: 'Мероприятие или участник не найдены',
+  })
+  removeParticipant(
+    @Param('id', eventIdPipe) id: string,
+    @Param('participantId', participantIdPipe) participantId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<void> {
+    return this.eventsService.removeParticipant(
+      id,
+      participantId,
+      request.user.sub,
+    );
   }
 
   @Get('by-pin/:sessionPin')

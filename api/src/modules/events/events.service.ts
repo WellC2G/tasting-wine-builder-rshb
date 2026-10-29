@@ -13,8 +13,10 @@ import { In, Repository } from 'typeorm';
 import { isUniqueViolation } from '../../common/database/is-unique-violation';
 import { Wine } from '../catalog/entities/wine.entity';
 import { Participant } from '../auth/entities/participant.entity';
+import { TastingSessionGateway } from '../tasting-session/tasting-session.gateway';
 import { TastingSessionService } from '../tasting-session/tasting-session.service';
 import { CreateEventDto } from './dto/create-event.dto';
+import { EventParticipantDto } from './dto/event-participant.dto';
 import { EventResponseDto } from './dto/event-response.dto';
 import { EventRoundResponseDto } from './dto/event-round-response.dto';
 import { EventSummaryResponseDto } from './dto/event-summary-response.dto';
@@ -54,6 +56,7 @@ export class EventsService {
     @InjectRepository(Wine)
     private readonly winesRepository: Repository<Wine>,
     private readonly tastingSessionService: TastingSessionService,
+    private readonly tastingSessionGateway: TastingSessionGateway,
   ) {}
 
   async create(
@@ -228,6 +231,41 @@ export class EventsService {
       event,
       participantCount,
       connectedParticipantCount,
+    );
+  }
+
+  async listParticipants(
+    id: string,
+    hostId: string,
+  ): Promise<EventParticipantDto[]> {
+    const event = await this.eventsRepository.findOneBy({
+      id,
+      hostId,
+    });
+
+    if (!event) {
+      throw new NotFoundException('Мероприятие не найдено');
+    }
+
+    const participants = await this.participantsRepository.find({
+      where: { eventId: event.id },
+      order: { joinedAt: 'ASC' },
+    });
+
+    return participants.map((participant) =>
+      EventParticipantDto.fromEntity(participant),
+    );
+  }
+
+  async removeParticipant(
+    id: string,
+    participantId: string,
+    hostId: string,
+  ): Promise<void> {
+    await this.tastingSessionGateway.removeParticipantAndNotify(
+      id,
+      participantId,
+      hostId,
     );
   }
 

@@ -128,6 +128,13 @@ export interface EventDetail extends EventSummary {
   rounds: EventRound[];
 }
 
+export interface EventParticipant {
+  id: string;
+  nickname: string;
+  isOnline: boolean;
+  joinedAt: string;
+}
+
 export interface LiveStateRound {
   roundId: string;
   orderNumber: number;

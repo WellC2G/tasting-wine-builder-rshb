@@ -4,6 +4,7 @@ import type {
   CreateEventInput,
   CreateRatingInput,
   EventDetail,
+  EventParticipant,
   EventRound,
   EventSummary,
   ExportLog,
@@ -385,6 +386,22 @@ export const apiClient = {
       return request<void>(`/api/v1/events/${eventId}`, {
         method: 'DELETE',
       });
+    },
+
+    participants(eventId: string): Promise<EventParticipant[]> {
+      return request<EventParticipant[]>(
+        `/api/v1/events/${eventId}/participants`,
+      );
+    },
+
+    removeParticipant(
+      eventId: string,
+      participantId: string,
+    ): Promise<void> {
+      return request<void>(
+        `/api/v1/events/${eventId}/participants/${participantId}`,
+        { method: 'DELETE' },
+      );
     },
 
     getByPin(sessionPin: string): Promise<EventDetail> {

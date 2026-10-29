@@ -25,10 +25,13 @@ export class ParticipantCounterService {
     eventId: string,
     roundId?: string,
   ): Promise<ParticipantCounterPayload> {
-    const connectedCount = await this.participantsRepository.countBy({
-      eventId,
-      isOnline: true,
-    });
+    const [participantCount, connectedCount] = await Promise.all([
+      this.participantsRepository.countBy({ eventId }),
+      this.participantsRepository.countBy({
+        eventId,
+        isOnline: true,
+      }),
+    ]);
     const targetRoundId =
       roundId ?? (await this.findCurrentRoundId(eventId));
     const votedCount = targetRoundId
@@ -40,6 +43,7 @@ export class ParticipantCounterService {
     return {
       eventId,
       roundId: targetRoundId ?? null,
+      participantCount,
       connectedCount,
       votedCount,
     };

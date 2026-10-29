@@ -62,6 +62,7 @@ import type {
   ParticipantCounterPayload,
   RoundSkippedPayload,
   RoundStartedPayload,
+  RoundStatsUpdatedPayload,
   RoundTimerUpdatedPayload,
   SocketMessagePayload,
   VotingClosedPayload,
@@ -562,6 +563,7 @@ export default function PresentationScreenPage() {
   const [counts, setCounts] = useState<ParticipantCounterPayload>({
     eventId,
     roundId: null,
+    participantCount: 0,
     connectedCount: 0,
     votedCount: 0,
   });
@@ -593,6 +595,7 @@ export default function PresentationScreenPage() {
     setCounts({
       eventId: currentEventId,
       roundId: live.currentRound?.roundId ?? null,
+      participantCount: live.participantCount,
       connectedCount: live.connectedParticipantCount,
       votedCount: 0,
     });
@@ -872,6 +875,7 @@ export default function PresentationScreenPage() {
         return {
           ...current,
           eventId,
+          participantCount: payload.participantCount,
           connectedCount: payload.connectedCount,
           ...(matchesCurrentRound
             ? {
@@ -881,6 +885,22 @@ export default function PresentationScreenPage() {
             : {}),
         };
       });
+    };
+
+    const handleRoundStatsUpdated = (
+      payload: RoundStatsUpdatedPayload,
+    ) => {
+      if (payload.eventId !== eventId) {
+        return;
+      }
+
+      if (payload.roundId === roundIdRef.current) {
+        setStats(payload.stats);
+        setCounts((current) => ({
+          ...current,
+          votedCount: payload.stats.totalRatings,
+        }));
+      }
     };
 
     const handleError = (payload: SocketMessagePayload) => {
@@ -895,6 +915,7 @@ export default function PresentationScreenPage() {
     socket.on('event_status_updated', handleEventStatusUpdated);
     socket.on('event_finished', handleEventFinished);
     socket.on('participant_counter_updated', handleCounter);
+    socket.on('round_stats_updated', handleRoundStatsUpdated);
     socket.on('session_error', handleError);
     socket.on('auth_error', handleError);
 
@@ -907,6 +928,7 @@ export default function PresentationScreenPage() {
       socket.off('event_status_updated', handleEventStatusUpdated);
       socket.off('event_finished', handleEventFinished);
       socket.off('participant_counter_updated', handleCounter);
+      socket.off('round_stats_updated', handleRoundStatsUpdated);
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };

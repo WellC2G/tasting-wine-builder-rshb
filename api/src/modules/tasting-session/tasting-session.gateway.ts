@@ -17,6 +17,7 @@ import type { JwtPayload } from '../auth/interfaces/authenticated-request.interf
 import { TastingMode } from '../events/entities/tasting-event.entity';
 import { TastingRoundStatus } from '../events/entities/tasting-round.entity';
 import { OutlierFilterService } from '../ratings/services/outlier-filter.service';
+import { ParticipantRosterService } from '../realtime/participant-roster.service';
 import { TastingSessionPublisherService } from '../realtime/tasting-session-publisher.service';
 import {
   AUTH_ERROR_MESSAGE,
@@ -38,6 +39,7 @@ import type {
   AddRoundTimePayload,
   JoinEventPayload,
   ParticipantCounterPayload,
+  RemoveParticipantPayload,
   RestartRoundPayload,
   RoundActionPayload,
   SocketAuthContext,
@@ -71,6 +73,7 @@ export class TastingSessionGateway
     private readonly roomStateService: RoomStateService,
     private readonly outlierFilterService: OutlierFilterService,
     private readonly publisher: TastingSessionPublisherService,
+    private readonly participantRosterService: ParticipantRosterService,
   ) {}
 
   afterInit(server: Namespace): void {
@@ -134,7 +137,9 @@ export class TastingSessionGateway
         auth.participantId,
         false,
       );
-      await this.broadcastParticipantCounter(auth.eventId);
+      await this.participantRosterService.broadcastRosterAndCounter(
+        auth.eventId,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to update participant ${auth.participantId} on disconnect`,
@@ -213,6 +218,25 @@ export class TastingSessionGateway
 
       await socket.join(room);
       await this.broadcastParticipantCounter(event.id);
+    });
+  }
+
+  @SubscribeMessage('host:remove_participant')
+  async handleRemoveParticipant(
+    @ConnectedSocket() socket: TastingSocket,
+    @MessageBody() payload: unknown,
+  ): Promise<void> {
+    await this.runHostAction(socket, async (hostId) => {
+      if (!this.isRemoveParticipantPayload(payload)) {
+        this.emitSessionError(socket, INVALID_ACTION_PAYLOAD_MESSAGE);
+        return;
+      }
+
+      await this.removeParticipantAndNotify(
+        payload.eventId,
+        payload.participantId,
+        hostId,
+      );
     });
   }
 
@@ -688,7 +712,9 @@ export class TastingSessionGateway
       true,
     );
     await socket.join(tastingRoom(auth.eventId));
-    await this.broadcastParticipantCounter(auth.eventId);
+    await this.participantRosterService.broadcastRosterAndCounter(
+      auth.eventId,
+    );
   }
 
   private async runHostAction(
@@ -715,6 +741,60 @@ export class TastingSessionGateway
         error instanceof Error ? error.stack : String(error),
       );
       this.emitSessionError(socket, SESSION_ACTION_ERROR_MESSAGE);
+    }
+  }
+
+  async removeParticipantAndNotify(
+    eventId: string,
+    participantId: string,
+    hostId: string,
+  ): Promise<void> {
+    const result = await this.tastingSessionService.removeParticipant(
+      eventId,
+      participantId,
+      hostId,
+    );
+    const room = tastingRoom(eventId);
+    const removalPayload = {
+      eventId,
+      participantId,
+      message:
+        'Вы были удалены организатором из текущей дегустации.',
+    };
+    const socketIds = this.participantSockets.get(participantId);
+
+    if (socketIds) {
+      for (const socketId of socketIds) {
+        this.server.to(socketId).emit('participant_removed', removalPayload);
+      }
+
+      this.participantSockets.delete(participantId);
+
+      for (const socketId of socketIds) {
+        const timeout = setTimeout(() => {
+          this.server.sockets.get(socketId)?.disconnect(true);
+        }, 50);
+
+        if (typeof timeout.unref === 'function') {
+          timeout.unref();
+        }
+      }
+    }
+
+    this.server.to(room).emit('participants_updated', {
+      eventId,
+      participants: result.participants,
+    });
+    this.server
+      .to(room)
+      .emit('participant_counter_updated', result.counter);
+
+    for (const updatedRound of result.updatedRounds) {
+      this.server.to(room).emit('round_stats_updated', {
+        eventId,
+        roundId: updatedRound.round.id,
+        stats: updatedRound.stats,
+      });
     }
   }
 
@@ -875,6 +955,23 @@ export class TastingSessionGateway
       isUUID(candidate.eventId) &&
       typeof candidate.roundId === 'string' &&
       isUUID(candidate.roundId)
+    );
+  }
+
+  private isRemoveParticipantPayload(
+    payload: unknown,
+  ): payload is RemoveParticipantPayload {
+    if (typeof payload !== 'object' || payload === null) {
+      return false;
+    }
+
+    const candidate = payload as Partial<RemoveParticipantPayload>;
+
+    return (
+      typeof candidate.eventId === 'string' &&
+      isUUID(candidate.eventId) &&
+      typeof candidate.participantId === 'string' &&
+      isUUID(candidate.participantId)
     );
   }
 

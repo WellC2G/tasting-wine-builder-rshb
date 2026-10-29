@@ -21,8 +21,11 @@ import {
 import { Participant } from '../auth/entities/participant.entity';
 import { WineResponseDto } from '../catalog/dto/wine-response.dto';
 import { Wine } from '../catalog/entities/wine.entity';
+import { EventParticipantDto } from '../events/dto/event-participant.dto';
 import { ParticipantCounterService } from '../realtime/participant-counter.service';
 import { Rating } from '../ratings/entities/rating.entity';
+import { RoundStatsResponseDto } from '../ratings/dto/round-stats-response.dto';
+import { OutlierFilterService } from '../ratings/services/outlier-filter.service';
 import { TastingSessionPublisherService } from '../realtime/tasting-session-publisher.service';
 import {
   EVENT_NOT_FOUND_MESSAGE,
@@ -60,6 +63,17 @@ interface RoundTimerUpdateResult extends OwnedRound {
   remainingSeconds: number;
 }
 
+export interface RemovedParticipantResult {
+  event: TastingEvent;
+  participant: Participant;
+  participants: EventParticipantDto[];
+  counter: ParticipantCounterPayload;
+  updatedRounds: Array<{
+    round: TastingRound;
+    stats: RoundStatsResponseDto;
+  }>;
+}
+
 @Injectable()
 export class TastingSessionService {
   constructor(
@@ -74,6 +88,7 @@ export class TastingSessionService {
     private readonly roomStateService: RoomStateService,
     private readonly participantCounterService: ParticipantCounterService,
     private readonly publisher: TastingSessionPublisherService,
+    private readonly outlierFilterService: OutlierFilterService,
   ) {}
 
   async findHostEventIds(hostId: string): Promise<string[]> {
@@ -643,6 +658,70 @@ export class TastingSessionService {
     }
 
     return { event, round };
+  }
+
+  async removeParticipant(
+    eventId: string,
+    participantId: string,
+    hostId: string,
+  ): Promise<RemovedParticipantResult> {
+    const event = await this.eventsRepository.findOne({
+      where: { id: eventId, hostId },
+      relations: {
+        rounds: {
+          wine: true,
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException(EVENT_NOT_FOUND_MESSAGE);
+    }
+
+    const participant = await this.participantsRepository.findOneBy({
+      id: participantId,
+      eventId,
+    });
+
+    if (!participant) {
+      throw new NotFoundException('Участник не найден');
+    }
+
+    await this.participantsRepository.delete({
+      id: participant.id,
+      eventId,
+    });
+
+    const roundsToRecalculate = event.rounds.filter(
+      (round) =>
+        round.status !== TastingRoundStatus.PENDING &&
+        round.status !== TastingRoundStatus.SKIPPED,
+    );
+    const updatedRounds = await Promise.all(
+      roundsToRecalculate.map(async (round) => ({
+        round,
+        stats: await this.outlierFilterService.filterAndAggregate(
+          round.id,
+        ),
+      })),
+    );
+    const participants = await this.participantsRepository.find({
+      where: { eventId },
+      order: { joinedAt: 'ASC' },
+    });
+    const counter = await this.participantCounterService.getCounter(
+      eventId,
+    );
+
+    return {
+      event,
+      participant,
+      participants: participants.map((item) =>
+        EventParticipantDto.fromEntity(item),
+      ),
+      counter,
+      updatedRounds,
+    };
   }
 
   async findRoundForStatistics(

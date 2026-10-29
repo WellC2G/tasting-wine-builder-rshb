@@ -41,6 +41,7 @@ export interface RoundSkippedPayload {
 export interface EventStatusUpdatedPayload {
   eventId: string;
   status: 'DRAFT' | 'ACTIVE' | 'FINISHED' | 'EXPORTED';
+  title: string;
 }
 
 export interface EventFinishedPayload {

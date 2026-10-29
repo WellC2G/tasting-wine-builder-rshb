@@ -138,6 +138,10 @@ export default function HostControlPage() {
   const [skipTarget, setSkipTarget] = useState<EventRound | null>(
     null,
   );
+  const [startEventConfirmOpen, setStartEventConfirmOpen] =
+    useState(false);
+  const [finishEventConfirmOpen, setFinishEventConfirmOpen] =
+    useState(false);
   const [selectedRoundStats, setSelectedRoundStats] =
     useState<RoundStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -169,12 +173,26 @@ export default function HostControlPage() {
       setLoadError(null);
 
       try {
-        const [detail, live] = await Promise.all([
+        const [detail, live, allEvents] = await Promise.all([
           apiClient.events.get(eventId),
           apiClient.events.liveState(eventId).catch(() => null),
+          apiClient.events.list().catch(() => []),
         ]);
 
         if (cancelled) {
+          return;
+        }
+
+        const otherActiveEvent = allEvents.find(
+          (candidate) =>
+            candidate.id !== eventId &&
+            candidate.status === 'ACTIVE',
+        );
+
+        if (otherActiveEvent) {
+          router.replace(
+            `/host/events/${otherActiveEvent.id}/control`,
+          );
           return;
         }
 
@@ -395,6 +413,15 @@ export default function HostControlPage() {
       payload: EventStatusUpdatedPayload,
     ) => {
       if (payload.eventId !== eventId) {
+        if (payload.status === 'ACTIVE') {
+          setToast({
+            message: `Запущена другая дегустация («${payload.title}»). Переходим к её пульту.`,
+            tone: 'info',
+          });
+          router.replace(
+            `/host/events/${payload.eventId}/control`,
+          );
+        }
         return;
       }
 
@@ -516,7 +543,7 @@ export default function HostControlPage() {
       socket.off('session_error', handleError);
       socket.off('auth_error', handleError);
     };
-  }, [socket, selectedRoundId, eventId]);
+  }, [socket, selectedRoundId, eventId, router]);
 
   useEffect(() => {
     if (!socket) {
@@ -1052,7 +1079,7 @@ export default function HostControlPage() {
             <button
               type="button"
               data-testid="control-start-event"
-              onClick={handleStartEvent}
+              onClick={() => setStartEventConfirmOpen(true)}
               disabled={!canStartEvent}
               className="mt-4 inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-500 px-6 text-base font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto"
             >
@@ -1107,7 +1134,7 @@ export default function HostControlPage() {
               <button
                 type="button"
                 data-testid="control-finish-event"
-                onClick={handleFinishEvent}
+                onClick={() => setFinishEventConfirmOpen(true)}
                 disabled={!canFinishEvent}
                 className="inline-flex min-h-14 shrink-0 items-center justify-center gap-2 rounded-2xl bg-wine-600 px-6 text-base font-semibold text-white transition hover:bg-wine-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -1740,6 +1767,76 @@ export default function HostControlPage() {
         result={exportResult}
         eventId={eventId}
       />
+
+      <Modal
+        open={startEventConfirmOpen}
+        onClose={() => setStartEventConfirmOpen(false)}
+        title="Начать дегустацию?"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Вы уверены, что хотите начать дегустацию «{event.title}»? До
+          завершения мероприятия переход к другим дегустациям будет
+          заблокирован.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setStartEventConfirmOpen(false)}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-start-event-confirm"
+            onClick={() => {
+              setStartEventConfirmOpen(false);
+              handleStartEvent();
+            }}
+            disabled={!canStartEvent}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-5 text-sm font-semibold text-emerald-950 transition hover:bg-emerald-400 disabled:opacity-50"
+          >
+            <Play className="h-4 w-4" aria-hidden="true" />
+            Начать дегустацию
+          </button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={finishEventConfirmOpen}
+        onClose={() => setFinishEventConfirmOpen(false)}
+        title="Завершить дегустацию?"
+        size="sm"
+      >
+        <p className="text-sm leading-6 text-stone-300">
+          Вы уверены, что хотите завершить дегустацию «{event.title}»?
+          После завершения вы перейдёте в режим просмотра статистики и
+          выгрузки результатов в Народный рейтинг.
+        </p>
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={() => setFinishEventConfirmOpen(false)}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-white/10 px-5 text-sm text-stone-300 transition hover:bg-white/5"
+          >
+            Отмена
+          </button>
+          <button
+            type="button"
+            data-testid="control-finish-event-confirm"
+            onClick={() => {
+              setFinishEventConfirmOpen(false);
+              handleFinishEvent();
+            }}
+            disabled={!canFinishEvent}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-wine-600 px-5 text-sm font-semibold text-white transition hover:bg-wine-500 disabled:opacity-50"
+          >
+            <Flag className="h-4 w-4" aria-hidden="true" />
+            Завершить дегустацию
+          </button>
+        </div>
+      </Modal>
 
       <Modal
         open={restartTarget !== null}

@@ -31,6 +31,7 @@ import { WineImage } from '@/components/wine-image';
 import { PageLoader } from '@/components/page-loader';
 import { Toast } from '@/components/toast';
 import { useHostSession } from '@/hooks/use-host-session';
+import { useTastingSocket } from '@/hooks/use-tasting-socket';
 import {
   ApiError,
   apiClient,
@@ -54,6 +55,7 @@ import type {
   TastingMode,
   Wine,
 } from '@/types/api';
+import type { EventStatusUpdatedPayload } from '@/types/realtime';
 
 interface PickedRound {
   key: string;
@@ -74,6 +76,7 @@ function autoRoundLabel(
 export default function HostEventsPage() {
   const router = useRouter();
   const { token, user, ready, logout } = useHostSession();
+  const { socket } = useTastingSocket(token);
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -157,6 +160,31 @@ export default function HostEventsPage() {
     void loadEvents();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, token]);
+
+  useEffect(() => {
+    if (!socket) {
+      return;
+    }
+
+    const handleEventStatus = (
+      payload: EventStatusUpdatedPayload,
+    ) => {
+      if (payload.status !== 'ACTIVE') {
+        return;
+      }
+
+      setToast(
+        `Запущена дегустация «${payload.title}». Открываем пульт…`,
+      );
+      router.replace(`/host/events/${payload.eventId}/control`);
+    };
+
+    socket.on('event_status_updated', handleEventStatus);
+
+    return () => {
+      socket.off('event_status_updated', handleEventStatus);
+    };
+  }, [socket, router]);
 
   const openCreateModal = () => {
     setEditingEventId(null);

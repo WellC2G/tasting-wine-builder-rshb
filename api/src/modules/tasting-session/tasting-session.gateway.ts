@@ -21,6 +21,7 @@ import { TastingSessionPublisherService } from '../realtime/tasting-session-publ
 import {
   AUTH_ERROR_MESSAGE,
   BOTTLE_REVEALED_MESSAGE,
+  HOST_ROOM,
   INVALID_ACTION_PAYLOAD_MESSAGE,
   SESSION_ACCESS_DENIED_MESSAGE,
   SESSION_ACTION_ERROR_MESSAGE,
@@ -663,6 +664,7 @@ export class TastingSessionGateway
     socket: TastingSocket,
     auth: Extract<SocketAuthContext, { role: 'HOST' }>,
   ): Promise<void> {
+    await socket.join(HOST_ROOM);
     const eventIds = await this.tastingSessionService.findHostEventIds(
       auth.hostId,
     );

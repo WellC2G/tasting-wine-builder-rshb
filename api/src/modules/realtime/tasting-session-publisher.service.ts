@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import type { Namespace } from 'socket.io';
 
-import { tastingRoom } from '../tasting-session/tasting-session.constants';
+import {
+  HOST_ROOM,
+  tastingRoom,
+} from '../tasting-session/tasting-session.constants';
 import type { ParticipantCounterPayload } from '../tasting-session/interfaces/tasting-session.interfaces';
 
 @Injectable()
@@ -18,6 +21,22 @@ export class TastingSessionPublisherService {
     payload: unknown,
   ): void {
     this.server?.to(tastingRoom(eventId)).emit(eventName, payload);
+  }
+
+  emitToHosts(eventName: string, payload: unknown): void {
+    this.server?.to(HOST_ROOM).emit(eventName, payload);
+  }
+
+  emitEventStateToAll(
+    eventId: string,
+    eventName: string,
+    payload: unknown,
+  ): void {
+    this.server
+      ?.to(tastingRoom(eventId))
+      .except(HOST_ROOM)
+      .emit(eventName, payload);
+    this.emitToHosts(eventName, payload);
   }
 
   emitParticipantCounter(

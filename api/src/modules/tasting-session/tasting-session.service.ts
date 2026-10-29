@@ -7,6 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
+import { isUniqueViolation } from '../../common/database/is-unique-violation';
+
 import {
   TastingEvent,
   TastingEventStatus,
@@ -131,12 +133,34 @@ export class TastingSessionService {
       );
     }
 
+    await this.assertNoOtherActiveEvent(event.id);
+
     event.status = TastingEventStatus.ACTIVE;
-    await this.eventsRepository.save(event);
-    this.publisher.emitToEvent(event.id, 'event_status_updated', {
-      eventId: event.id,
-      status: TastingEventStatus.ACTIVE,
-    });
+
+    try {
+      await this.eventsRepository.save(event);
+    } catch (error) {
+      if (
+        isUniqueViolation(
+          error,
+          'uq_tasting_events_single_active',
+        )
+      ) {
+        await this.throwOtherActiveEventConflict(event.id);
+      }
+
+      throw error;
+    }
+
+    this.publisher.emitEventStateToAll(
+      event.id,
+      'event_status_updated',
+      {
+        eventId: event.id,
+        status: TastingEventStatus.ACTIVE,
+        title: event.title,
+      },
+    );
 
     return event;
   }
@@ -185,10 +209,15 @@ export class TastingSessionService {
     await this.eventsRepository.save(event);
     this.roomStateService.clearEventTimers(event.id);
     this.roomStateService.clearEventPausedRemainingSeconds(event.id);
-    this.publisher.emitToEvent(event.id, 'event_status_updated', {
-      eventId: event.id,
-      status: TastingEventStatus.FINISHED,
-    });
+    this.publisher.emitEventStateToAll(
+      event.id,
+      'event_status_updated',
+      {
+        eventId: event.id,
+        status: TastingEventStatus.FINISHED,
+        title: event.title,
+      },
+    );
     this.publisher.emitToEvent(event.id, 'event_finished', {
       eventId: event.id,
       status: TastingEventStatus.FINISHED,
@@ -684,6 +713,40 @@ export class TastingSessionService {
         ? this.buildLiveRound(event, currentRound, viewer)
         : null,
     };
+  }
+
+  private async assertNoOtherActiveEvent(
+    eventId: string,
+  ): Promise<void> {
+    const otherActiveEvent = await this.eventsRepository.findOne({
+      where: { status: TastingEventStatus.ACTIVE },
+      select: { id: true, title: true },
+    });
+
+    if (otherActiveEvent && otherActiveEvent.id !== eventId) {
+      throw new ConflictException(
+        `Уже запущена другая дегустация («${otherActiveEvent.title}»). Сначала завершите её.`,
+      );
+    }
+  }
+
+  private async throwOtherActiveEventConflict(
+    eventId: string,
+  ): Promise<never> {
+    const otherActiveEvent = await this.eventsRepository.findOne({
+      where: { status: TastingEventStatus.ACTIVE },
+      select: { id: true, title: true },
+    });
+
+    if (otherActiveEvent && otherActiveEvent.id !== eventId) {
+      throw new ConflictException(
+        `Уже запущена другая дегустация («${otherActiveEvent.title}»). Сначала завершите её.`,
+      );
+    }
+
+    throw new ConflictException(
+      'Не удалось запустить дегустацию. Обновите страницу и попробуйте снова.',
+    );
   }
 
   private async findOwnedRound(

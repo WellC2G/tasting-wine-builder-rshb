@@ -1,5 +1,6 @@
 export const TASTING_NAMESPACE = '/tasting';
 export const TASTING_ROOM_PREFIX = 'tasting_';
+export const HOST_ROOM = 'hosts';
 
 export const AUTH_ERROR_MESSAGE =
   'Ошибка авторизации: недействительный токен';
